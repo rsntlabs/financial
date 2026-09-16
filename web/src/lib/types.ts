@@ -8,6 +8,7 @@ export interface PriceHistory {
   fetchedAt: string;
   points: PricePoint[];
   outputSize?: "full";
+  source?: string;
 }
 export interface Point {
   year: number;

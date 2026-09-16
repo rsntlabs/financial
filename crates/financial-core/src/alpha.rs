@@ -10,77 +10,78 @@ pub fn number(value: &Value) -> Option<f64> {
         .filter(|v| v.is_finite())
 }
 
+pub const MAPPINGS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "income",
+        &[
+            ("totalRevenue", "annualTotalRevenue"),
+            ("costOfRevenue", "annualCostOfRevenue"),
+            ("grossProfit", "annualGrossProfit"),
+            ("operatingIncome", "annualOperatingIncome"),
+            ("ebit", "annualEBIT"),
+            ("ebitda", "annualEBITDA"),
+            ("netIncome", "annualNetIncome"),
+        ],
+    ),
+    (
+        "balance",
+        &[
+            (
+                "cashAndCashEquivalentsAtCarryingValue",
+                "annualCashAndCashEquivalents",
+            ),
+            ("currentNetReceivables", "annualAccountsReceivable"),
+            ("inventory", "annualInventory"),
+            ("totalCurrentAssets", "annualCurrentAssets"),
+            ("propertyPlantEquipment", "annualNetPPE"),
+            ("totalNonCurrentAssets", "annualTotalNonCurrentAssets"),
+            ("totalAssets", "annualTotalAssets"),
+            ("currentAccountsPayable", "annualAccountsPayable"),
+            ("currentDebt", "annualCurrentDebt"),
+            ("totalCurrentLiabilities", "annualCurrentLiabilities"),
+            ("longTermDebt", "annualLongTermDebt"),
+            ("shortLongTermDebtTotal", "annualTotalDebt"),
+            (
+                "totalNonCurrentLiabilities",
+                "annualTotalNonCurrentLiabilitiesNetMinorityInterest",
+            ),
+            (
+                "totalLiabilities",
+                "annualTotalLiabilitiesNetMinorityInterest",
+            ),
+            ("retainedEarnings", "annualRetainedEarnings"),
+            ("totalShareholderEquity", "annualStockholdersEquity"),
+        ],
+    ),
+    (
+        "cashflow",
+        &[
+            (
+                "depreciationDepletionAndAmortization",
+                "annualDepreciationAmortizationDepletion",
+            ),
+            ("operatingCashflow", "annualOperatingCashFlow"),
+            ("capitalExpenditures", "annualCapitalExpenditure"),
+            ("cashflowFromInvestment", "annualInvestingCashFlow"),
+            (
+                "proceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet",
+                "annualIssuanceOfDebt",
+            ),
+            (
+                "paymentsForRepurchaseOfEquity",
+                "annualRepurchaseOfCapitalStock",
+            ),
+            ("dividendPayout", "annualCashDividendsPaid"),
+            ("cashflowFromFinancing", "annualFinancingCashFlow"),
+            ("changeInCashAndCashEquivalents", "annualChangesInCash"),
+        ],
+    ),
+];
+
 pub fn normalize(payload: &Value) -> Result<Value, String> {
     let mut metrics: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
     let mut currencies = BTreeSet::new();
-    let mappings: &[(&str, &[(&str, &str)])] = &[
-        (
-            "income",
-            &[
-                ("totalRevenue", "annualTotalRevenue"),
-                ("costOfRevenue", "annualCostOfRevenue"),
-                ("grossProfit", "annualGrossProfit"),
-                ("operatingIncome", "annualOperatingIncome"),
-                ("ebit", "annualEBIT"),
-                ("ebitda", "annualEBITDA"),
-                ("netIncome", "annualNetIncome"),
-            ],
-        ),
-        (
-            "balance",
-            &[
-                (
-                    "cashAndCashEquivalentsAtCarryingValue",
-                    "annualCashAndCashEquivalents",
-                ),
-                ("currentNetReceivables", "annualAccountsReceivable"),
-                ("inventory", "annualInventory"),
-                ("totalCurrentAssets", "annualCurrentAssets"),
-                ("propertyPlantEquipment", "annualNetPPE"),
-                ("totalNonCurrentAssets", "annualTotalNonCurrentAssets"),
-                ("totalAssets", "annualTotalAssets"),
-                ("currentAccountsPayable", "annualAccountsPayable"),
-                ("currentDebt", "annualCurrentDebt"),
-                ("totalCurrentLiabilities", "annualCurrentLiabilities"),
-                ("longTermDebt", "annualLongTermDebt"),
-                ("shortLongTermDebtTotal", "annualTotalDebt"),
-                (
-                    "totalNonCurrentLiabilities",
-                    "annualTotalNonCurrentLiabilitiesNetMinorityInterest",
-                ),
-                (
-                    "totalLiabilities",
-                    "annualTotalLiabilitiesNetMinorityInterest",
-                ),
-                ("retainedEarnings", "annualRetainedEarnings"),
-                ("totalShareholderEquity", "annualStockholdersEquity"),
-            ],
-        ),
-        (
-            "cashflow",
-            &[
-                (
-                    "depreciationDepletionAndAmortization",
-                    "annualDepreciationAmortizationDepletion",
-                ),
-                ("operatingCashflow", "annualOperatingCashFlow"),
-                ("capitalExpenditures", "annualCapitalExpenditure"),
-                ("cashflowFromInvestment", "annualInvestingCashFlow"),
-                (
-                    "proceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet",
-                    "annualIssuanceOfDebt",
-                ),
-                (
-                    "paymentsForRepurchaseOfEquity",
-                    "annualRepurchaseOfCapitalStock",
-                ),
-                ("dividendPayout", "annualCashDividendsPaid"),
-                ("cashflowFromFinancing", "annualFinancingCashFlow"),
-                ("changeInCashAndCashEquivalents", "annualChangesInCash"),
-            ],
-        ),
-    ];
-    for (section, fields) in mappings {
+    for (section, fields) in MAPPINGS {
         let response = &payload[section];
         for key in ["Error Message", "Information", "Note"] {
             if response[key].is_string() {

@@ -204,7 +204,7 @@ function Metric({
 }
 export default function App() {
   const [apiKey, setApiKey] = useState(loadKey);
-  const [settings, setSettings] = useState(() => !loadKey());
+  const [settings, setSettings] = useState(false);
   const [cached, setCached] = useState(false);
   const [storageWarning, setStorageWarning] = useState("");
   const [ticker, setTicker] = useState("");
@@ -235,7 +235,12 @@ export default function App() {
     setError("");
     inputRef.current = symbol;
     try {
-      const loaded = await loadStock(symbol, apiKey, refresh);
+      const loaded = await loadStock(
+        symbol,
+        apiKey,
+        refresh,
+        endYear ? Number(endYear) : undefined,
+      );
       if (controller.signal.aborted) return;
       const data = loaded.payload;
       const next = await analyze(
@@ -359,8 +364,7 @@ export default function App() {
                 busy={busy}
               />
               <p id="ticker-hint" className="ticker-hint">
-                Enter an Alpha Vantage ticker, or open a saved stock in Data
-                settings.
+                Enter a ticker, or open a saved stock in Data settings.
               </p>
               {error && (
                 <div role="alert" className="error-message">
@@ -409,7 +413,7 @@ export default function App() {
             </div>
             <div className="landing-bottom">
               <span>Annual financial statements</span>
-              <span>Powered by Alpha Vantage</span>
+              <span>Yahoo Finance · SEC EDGAR · Alpha Vantage</span>
             </div>
           </div>
         ) : null}
@@ -471,7 +475,7 @@ export default function App() {
             <div className="cache-status" role="status">
               {cached
                 ? "Loaded from this browser’s saved statements. No API requests used for statements."
-                : "Loaded from Alpha Vantage."}{" "}
+                : "Loaded from financial data providers."}{" "}
               Saved data stays unchanged until you refresh it.
               {storageWarning && <p>{storageWarning}</p>}
             </div>
@@ -757,11 +761,11 @@ export default function App() {
               </summary>
               <div>
                 <p>
-                  Source: Alpha Vantage annual fundamentals. Fiscal years ending
-                  January 1–7 are assigned to the preceding year. Ratios with
-                  missing or nonpositive denominators are unavailable. Cash
-                  CAPEX is shown as a positive outflow; D&A / gross PP&E uses
-                  year-end assets.
+                  Annual fundamentals from the sources listed below. Fiscal
+                  years ending January 1–7 are assigned to the preceding year.
+                  Ratios with missing or nonpositive denominators are
+                  unavailable. Cash CAPEX is shown as a positive outflow; D&A /
+                  gross PP&E uses year-end assets.
                 </p>
                 {report.warnings.map((warning, i) => (
                   <p key={i}>{warning}</p>
@@ -775,7 +779,10 @@ export default function App() {
               </div>
             </details>
             <footer className="dashboard-footer">
-              <span>Annual financial data · Alpha Vantage</span>
+              <span>
+                Annual financial data · Yahoo Finance / SEC EDGAR / Alpha
+                Vantage
+              </span>
               <span>
                 {report.fetchedAt
                   ? `Retrieved ${new Date(report.fetchedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`

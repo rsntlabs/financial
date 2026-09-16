@@ -75,35 +75,26 @@ export function DataSettings({
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="eyebrow">YOUR DATA CONNECTION</p>
-            <h2 id="settings-title">Set up Alpha Vantage</h2>
+            <h2 id="settings-title">Optional Alpha Vantage fallback</h2>
           </div>
           <Button variant="ghost" onClick={onClose}>
             Close settings
           </Button>
         </div>
-        <ol className="setup-steps">
-          <li>
-            <strong>Get your API key.</strong>{" "}
-            <a
-              href="https://www.alphavantage.co/support/#api-key"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Create a free Alpha Vantage key ↗
-            </a>{" "}
-            using your email address.
-          </li>
-          <li>
-            <strong>Save it below.</strong> Your key is sent directly to Alpha
-            Vantage when you fetch a stock.
-          </li>
-          <li>
-            <strong>Choose a ticker.</strong> The first download uses five API
-            requests, plus up to three retries per request for temporary
-            failures or quota limits. Repeat searches use your saved statements
-            and prices.
-          </li>
-        </ol>
+        <p className="footnote">
+          Yahoo Finance is tried first, then SEC EDGAR. You can search without a
+          key. Add an Alpha Vantage key only to fill remaining gaps. Your key is
+          sent to the configured financial data service, which uses it only for
+          fallback requests.
+          <a
+            href="https://www.alphavantage.co/support/#api-key"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {" "}
+            Get an Alpha Vantage key ↗
+          </a>
+        </p>
         <form onSubmit={save} className="key-form">
           <label htmlFor="alpha-key">Alpha Vantage API key</label>
           <Input
@@ -221,9 +212,8 @@ export function DataSettings({
             </Button>
           )}
           <p className="footnote mt-3">
-            Export CSV from a report to keep a regular file. Alpha Vantage’s
-            free allowance is currently 25 requests per day; saved reports use
-            none.
+            Export CSV from a report to keep a regular file. Saved reports make
+            no provider requests.
           </p>
         </div>
       </Card>

@@ -1,9 +1,9 @@
-import type { AlphaPayload } from "./provider";
+import type { FinancialPayload } from "./provider";
 import type { PriceHistory } from "./types";
 export interface SavedStock {
   ticker: string;
   fetchedAt: string;
-  payload: AlphaPayload;
+  payload: FinancialPayload;
 }
 const DATABASE = "financials-alphavantage-v1";
 export const KEY_STORAGE = "financials.alphavantage.key";

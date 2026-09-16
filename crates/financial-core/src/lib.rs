@@ -1,6 +1,7 @@
 //! Platform-independent parsing and financial calculations. This crate is built
 //! as wasm32-unknown-unknown; provider transport uses browser fetch on WASM.
 pub mod alpha;
+pub mod dataset;
 pub mod provider;
 pub mod statements;
 use chrono::{Datelike, NaiveDate};
@@ -116,7 +117,14 @@ pub fn analyze(
     if end_year.is_some_and(|y| !(1900..=2200).contains(&y)) {
         return Err("Invalid ending fiscal year.".into());
     }
-    let normalized = alpha::normalize(payload)?;
+    let normalized = if payload.get("schemaVersion").is_some() {
+        let data: dataset::Dataset =
+            serde_json::from_value(payload.clone()).map_err(|_| "Invalid provider data.")?;
+        data.validate()?;
+        serde_json::to_value(data).map_err(|_| "Invalid provider data.")?
+    } else {
+        alpha::normalize(payload)?
+    };
     let data: BTreeMap<String, BTreeMap<String, f64>> =
         serde_json::from_value(normalized["metrics"].clone())
             .map_err(|_| "Invalid annual metrics.")?;
@@ -130,7 +138,10 @@ pub fn analyze(
             ends.insert(y, end.clone());
         }
     }
-    let latest = *ends.keys().next_back().unwrap();
+    let latest = *ends
+        .keys()
+        .next_back()
+        .ok_or("No valid annual reporting dates.")?;
     let end = end_year.unwrap_or(latest);
     let years: Vec<_> = (end - count as i32 + 1..=end).collect();
     let value = |key: &str, y: i32| -> Option<f64> { data.get(key)?.get(ends.get(&y)?).copied() };

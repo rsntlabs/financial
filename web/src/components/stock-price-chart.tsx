@@ -126,7 +126,7 @@ export function StockPriceChart({
                 size="sm"
                 variant="outline"
                 disabled={busy}
-                onClick={() => (apiKey ? void load(true) : onSettings())}
+                onClick={() => void load(true)}
               >
                 <RefreshCw size={13} aria-hidden="true" />
                 {busy ? "Loading prices…" : "Refresh price"}
@@ -242,7 +242,7 @@ export function StockPriceChart({
                   {points.length} trading sessions
                 </span>
                 <span>
-                  Alpha Vantage ·{" "}
+                  {history?.source || "Alpha Vantage"} ·{" "}
                   {history?.outputSize === "full"
                     ? "Full available history"
                     : "Limited saved history"}{" "}

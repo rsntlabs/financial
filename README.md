@@ -1,17 +1,17 @@
 # Financials dashboard
 
-A static React/shadcn dashboard with a Rust WASM analysis engine. Financial
-statements come directly from Alpha Vantage through the `alpha_vantage` Rust
-crate and are cached locally in the user's browser with IndexedDB.
+A React dashboard with a Rust WASM analysis engine and a native Rust provider
+service. New downloads prefer **Yahoo Finance → SEC EDGAR → Alpha Vantage**.
+Alpha Vantage is optional and is called only for remaining information that its
+endpoints support. Saved statements and prices remain in browser IndexedDB.
 
-Charts show 5 or 10 fiscal years, amounts in reporting-currency millions, gross
-margin, CAPEX, D&A and cash generation. The app includes statement tables and
-CSV export, plus a stock price chart with the latest daily close, daily change,
-and 1-month, 3-month or all-loaded-history views. No financial-data backend is needed.
+Charts and tables cover 5 or 10 fiscal years, cash generation, margins and daily
+prices, with CSV export. Sources are preserved per metric and fiscal date.
 
-## Build and run locally
+## Run locally
 
-Requires Node 22.12+, npm and Rust/rustup:
+Requires Rust 1.91+, the WASM target, wasm-bindgen-cli 0.2.126, Node 22.12+ and npm.
+On Linux, native builds also need the OpenSSL development package and pkg-config.
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -19,35 +19,33 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cd web
 npm ci
 npm run build
-npm run preview -- --host 127.0.0.1
+cd ..
+SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' cargo run -p financial-providers
 ```
 
-Open http://localhost:4173, choose **Set up Alpha Vantage**, save your key, and
-enter a ticker. Saved data is reused until you refresh or clear it. Fetches retry
-up to three times on transient failures and quota limits.
+Replace the SEC user agent with your application and real contact email. Open
+http://127.0.0.1:3001. Search without a key; **Data settings** lets you add an
+optional Alpha Vantage key for gaps. The browser sends that key in a POST body
+to the configured service, which forwards it only to Alpha Vantage when needed.
+The service does not persist keys or log request bodies.
 
-The static page is built at **web/dist/index.html**. Serve the entire `web/dist/`
-directory over HTTP or HTTPS; opening the HTML with `file://` is unsupported.
+For UI development, run the service and `npm run dev` in `web/`; Vite proxies
+`/api` to port 3001. The native service also serves the production `web/dist/`.
 
-## Deploy with GitHub Pages
+## Deployment
 
-1. Push this project to a GitHub repository.
-2. In **Settings → Pages → Build and deployment**, set **Source** to
-   **GitHub Actions**.
-3. Push to the repository's default branch, or run **Web, WASM and GitHub Pages**
-   manually from the **Actions** tab with that branch selected. If the initial
-   push ran before Pages was enabled, rerun the workflow after step 2.
+Run the native service on your server behind HTTPS. `BIND_ADDR` defaults to
+`127.0.0.1:3001`; `WEB_DIST` defaults to `web/dist`. The service must have outbound
+access to Yahoo, SEC and (when used) Alpha Vantage. Multiple service instances
+must coordinate SEC traffic to stay within the SEC's aggregate access limits.
 
-The [workflow](.github/workflows/web.yml) builds Rust/WASM and the dashboard,
-runs Rust and browser checks, then deploys only the static `web/dist/` output.
-The Pages configuration supplies the correct base path for repository sites,
-user sites and configured custom domains. Pull requests and other branches run
-checks under a sample repository subpath without deploying. The deployment URL
-appears in the workflow's `github-pages` environment.
+GitHub Pages can host the static UI, but **cannot run the provider service**.
+For Pages, set the repository variable `VITE_PROVIDER_URL` to your deployed
+HTTPS service URL ending in `/api`, and set `WEB_ORIGIN` on the service to your
+exact Pages origin (scheme and hostname, without the repository path). The
+workflow builds and tests the UI and deploys static assets. Without a configured
+service, existing saved reports remain readable, but new downloads cannot work.
+There is no automatic browser-only Alpha Vantage bypass.
 
-No Alpha Vantage secret is needed in GitHub Actions. Each visitor enters their
-own key in the browser. Cached data and keys are local to the browser and site
-origin; data saved on localhost does not transfer to the hosted site.
-
-See [web/README.md](web/README.md) for key storage, cache behavior, data mappings,
-manual static deployment and verification commands.
+See [provider architecture](docs/providers.md) for selection rules and crate
+choices, and [web notes](web/README.md) for caching and verification.

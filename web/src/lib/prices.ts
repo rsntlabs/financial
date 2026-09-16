@@ -1,47 +1,32 @@
-import { fetchStatement } from "./engine";
+import { providerRequest } from "./service";
 import { priceCacheGeneration, savedPrices, savePrices } from "./storage";
-import type { PriceHistory, PricePoint } from "./types";
+import type { PriceHistory } from "./types";
 
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function parsePrices(
-  body: Record<string, unknown>,
-  ticker: string,
-): PricePoint[] {
-  const metadata = body["Meta Data"];
-  const series = body["Time Series (Daily)"];
-  if (record(metadata) && metadata["4. Output Size"] === "Compact")
-    throw new Error(
-      "Alpha Vantage returned limited prices instead of full history. Check your plan access in Data settings.",
-    );
+function validatePrices(history: PriceHistory, ticker: string): PriceHistory {
   if (
-    !record(metadata) ||
-    metadata["2. Symbol"] !== ticker ||
-    !record(series) ||
-    !Object.keys(series).length
+    !history ||
+    history.ticker !== ticker ||
+    history.outputSize !== "full" ||
+    !Array.isArray(history.points) ||
+    !history.points.length ||
+    history.points.some(
+      (p) =>
+        !p ||
+        typeof p.date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(p.date) ||
+        !Number.isFinite(Date.parse(p.date)) ||
+        new Date(p.date).toISOString().slice(0, 10) !== p.date ||
+        !Number.isFinite(p.close) ||
+        p.close <= 0,
+    )
   )
     throw new Error(
-      `Daily prices are unavailable for ${ticker}. Check the ticker and its coverage.`,
+      "The data service returned malformed daily prices. No price data was saved.",
     );
-  const points = Object.entries(series).map(([date, row]) => {
-    const close = record(row) ? row["4. close"] : undefined;
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-      !Number.isFinite(Date.parse(date)) ||
-      new Date(date).toISOString().slice(0, 10) !== date ||
-      typeof close !== "string" ||
-      !/^\d+(\.\d+)?$/.test(close) ||
-      !Number.isFinite(Number(close)) ||
-      Number(close) <= 0
-    )
-      throw new Error(
-        "Alpha Vantage returned malformed daily prices. No price data was saved.",
-      );
-    return { date, close: Number(close) };
-  });
-  return points.sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    ...history,
+    points: [...history.points].sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }
 
 interface LoadedPrices {
@@ -63,27 +48,13 @@ export function loadPrices(
       saved = await savedPrices(ticker);
       if (saved?.outputSize === "full")
         return { history: saved, cached: true, warning: "" };
-      if (saved && !apiKey)
-        return {
-          history: saved,
-          cached: true,
-          warning:
-            "Saved prices contain only a limited history. Add a premium Alpha Vantage key in Data settings to load full history.",
-        };
     }
-    if (!apiKey)
-      throw new Error(
-        "Add your Alpha Vantage API key in Data settings to load prices. Saved financials are still available.",
-      );
     let history: PriceHistory;
     try {
-      const body = await fetchStatement(apiKey, ticker, "TIME_SERIES_DAILY");
-      history = {
+      history = validatePrices(
+        await providerRequest<PriceHistory>("prices", ticker, apiKey),
         ticker,
-        fetchedAt: new Date().toISOString(),
-        points: parsePrices(body, ticker),
-        outputSize: "full",
-      };
+      );
     } catch (error) {
       if (!saved) throw error;
       return {
@@ -107,7 +78,7 @@ export function loadPrices(
     // Capture before waiting for another tab's download as well as before fetching.
     const generation = await priceCacheGeneration();
     return navigator.locks
-      ? await navigator.locks.request(`alphavantage:prices:${ticker}`, () =>
+      ? await navigator.locks.request(`financials:prices:${ticker}`, () =>
           load(generation),
         )
       : await load(generation);
