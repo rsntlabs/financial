@@ -742,6 +742,62 @@
   margin-bottom: 14px;
   font-size: 12px;
 }
+.stock-price-panel {
+  margin-bottom: 26px;
+}
+.price-heading,
+.price-actions,
+.price-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.price-actions {
+  gap: 12px;
+}
+.price-actions button {
+  font-size: 11px;
+}
+.price-ranges {
+  display: flex;
+  gap: 3px;
+}
+.price-summary {
+  margin-top: 16px;
+}
+.price-value {
+  font-size: 32px;
+  font-weight: 580;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  margin-right: 14px;
+}
+.price-summary > span + span {
+  font-size: 12px;
+  display: inline-block;
+}
+.price-change {
+  color: var(--foreground);
+}
+.price-summary p {
+  margin-top: 5px;
+}
+.price-footer {
+  padding: 12px 5px 0;
+  gap: 5px 16px;
+}
+.price-notice {
+  font-size: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--muted);
+  border-radius: 6px;
+}
+.price-empty {
+  height: 160px;
+}
 @media (min-width: 1600px) {
   .landing-main {
     padding-top: 110px;

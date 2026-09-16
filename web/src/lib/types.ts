@@ -1,4 +1,13 @@
 export type Nullable = number | null;
+export interface PricePoint {
+  date: string;
+  close: number;
+}
+export interface PriceHistory {
+  ticker: string;
+  fetchedAt: string;
+  points: PricePoint[];
+}
 export interface Point {
   year: number;
   end: string | null;

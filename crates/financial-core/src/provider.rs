@@ -121,11 +121,20 @@ pub async fn fetch_statement(key: &str, ticker: &str, function: &str) -> Result<
     if key.is_empty() || key.len() > 128 || !key.bytes().all(|c| c.is_ascii_alphanumeric()) {
         return Err("Enter your Alpha Vantage API key (letters and numbers only).".into());
     }
-    if !["INCOME_STATEMENT", "BALANCE_SHEET", "CASH_FLOW", "OVERVIEW"].contains(&function) {
-        return Err("Unsupported financial statement request.".into());
+    if ![
+        "INCOME_STATEMENT",
+        "BALANCE_SHEET",
+        "CASH_FLOW",
+        "OVERVIEW",
+        "TIME_SERIES_DAILY",
+    ]
+    .contains(&function)
+    {
+        return Err("Unsupported financial data request.".into());
     }
     let api = ApiClient::set_api(key, Transport);
-    // The crate's documented custom builder covers financial statement endpoints.
+    // Daily prices use the default compact output (100 sessions), available on free keys.
+    // The crate's documented custom builder covers statements and price endpoints.
     // Validated/encoded inputs are needed because that builder concatenates its query.
     let ticker = ticker.replace('^', "%5E").replace('=', "%3D");
     request_with_retries(

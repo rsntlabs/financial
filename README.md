@@ -6,7 +6,8 @@ crate and are cached locally in the user's browser with IndexedDB.
 
 Charts show 5 or 10 fiscal years, amounts in reporting-currency millions, gross
 margin, CAPEX, D&A and cash generation. The app includes statement tables and
-CSV export. No financial-data backend is needed.
+CSV export, plus a stock price chart with the latest daily close, daily change,
+and 1-month, 3-month or all-loaded-history views. No financial-data backend is needed.
 
 ## Build and run locally
 

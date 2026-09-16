@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FinancialChart, RevenueStreams } from "@/components/financial-chart";
+import { StockPriceChart } from "@/components/stock-price-chart";
 import { analyze } from "@/lib/engine";
 import { loadStock } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
@@ -469,7 +470,7 @@ export default function App() {
             </div>
             <div className="cache-status" role="status">
               {cached
-                ? "Loaded from this browser’s saved statements. No API requests used."
+                ? "Loaded from this browser’s saved statements. No API requests used for statements."
                 : "Loaded from Alpha Vantage."}{" "}
               Saved data stays unchanged until you refresh it.
               {storageWarning && <p>{storageWarning}</p>}
@@ -526,6 +527,12 @@ export default function App() {
                 Updating financials…
               </p>
             )}
+            <StockPriceChart
+              key={report.ticker}
+              ticker={report.ticker}
+              apiKey={apiKey}
+              onSettings={() => setSettings(true)}
+            />
             <div className="section-caption">
               <span>AT A GLANCE</span>
               <span>Fiscal year {latest.year}</span>
@@ -715,8 +722,8 @@ export default function App() {
                     </p>
                     <div className="reading-divider" />
                     <p className="text-sm">
-                      All charts use the same fiscal-year window. Missing values
-                      stay missing, and negative values are preserved.
+                      Statement charts use the same fiscal-year window. Missing
+                      values stay missing, and negative values are preserved.
                     </p>
                     <Button
                       variant="ghost"

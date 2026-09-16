@@ -1,4 +1,5 @@
 import type { AlphaPayload } from "./provider";
+import type { PriceHistory } from "./types";
 export interface SavedStock {
   ticker: string;
   fetchedAt: string;
@@ -9,12 +10,19 @@ export const KEY_STORAGE = "financials.alphavantage.key";
 
 async function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 1);
+    const request = indexedDB.open(DATABASE, 3);
     request.onupgradeneeded = () => {
-      request.result.createObjectStore("stocks", { keyPath: "ticker" });
-      request.result.createObjectStore("pending", { keyPath: "ticker" });
+      for (const name of ["stocks", "pending", "prices"]) {
+        if (!request.result.objectStoreNames.contains(name))
+          request.result.createObjectStore(name, { keyPath: "ticker" });
+      }
+      if (!request.result.objectStoreNames.contains("metadata"))
+        request.result.createObjectStore("metadata");
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () =>
       reject(
         new Error(
@@ -56,6 +64,36 @@ export const savedStock = (ticker: string) =>
   operation<SavedStock | undefined>("stocks", "readonly", (s) => s.get(ticker));
 export const savedStocks = () =>
   operation<SavedStock[]>("stocks", "readonly", (s) => s.getAll());
+export const savedPrices = (ticker: string) =>
+  operation<PriceHistory | undefined>("prices", "readonly", (s) =>
+    s.get(ticker),
+  );
+export const priceCacheGeneration = async () =>
+  (await operation<number | undefined>("metadata", "readonly", (s) =>
+    s.get("price-generation"),
+  )) ?? 0;
+export async function savePrices(record: PriceHistory, generation: number) {
+  const db = await database();
+  return new Promise<boolean>((resolve, reject) => {
+    // The comparison and write must be atomic with clearing, including across tabs.
+    const tx = db.transaction(["prices", "metadata"], "readwrite");
+    const current = tx.objectStore("metadata").get("price-generation");
+    let saved = false;
+    current.onsuccess = () => {
+      if ((current.result ?? 0) !== generation) return;
+      tx.objectStore("prices").put(record);
+      saved = true;
+    };
+    tx.oncomplete = () => {
+      db.close();
+      resolve(saved);
+    };
+    tx.onabort = tx.onerror = () => {
+      db.close();
+      reject(new Error("Could not save prices to browser storage."));
+    };
+  });
+}
 export const pendingStock = (ticker: string) =>
   operation<SavedStock | undefined>("pending", "readonly", (s) =>
     s.get(ticker),
@@ -83,12 +121,21 @@ export async function saveStock(record: SavedStock) {
   });
 }
 export async function clearStocks() {
-  // One transaction removes complete and interrupted downloads together.
+  // One transaction removes statements, interrupted downloads and prices together.
   const db = await database();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(["stocks", "pending"], "readwrite");
+    const tx = db.transaction(
+      ["stocks", "pending", "prices", "metadata"],
+      "readwrite",
+    );
+    const metadata = tx.objectStore("metadata");
+    const generation = metadata.get("price-generation");
+    generation.onsuccess = () => {
+      metadata.put((generation.result ?? 0) + 1, "price-generation");
+    };
     tx.objectStore("stocks").clear();
     tx.objectStore("pending").clear();
+    tx.objectStore("prices").clear();
     tx.oncomplete = () => {
       db.close();
       resolve();

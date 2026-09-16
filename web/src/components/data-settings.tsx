@@ -64,7 +64,7 @@ export function DataSettings({
       await clearStocks();
       setStocks([]);
       setClearing(false);
-      setMessage("Saved statements cleared. Your API key was kept.");
+      setMessage("Saved statements and prices cleared. Your API key was kept.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -98,9 +98,10 @@ export function DataSettings({
             Vantage when you fetch a stock.
           </li>
           <li>
-            <strong>Choose a ticker.</strong> The first download uses four API
+            <strong>Choose a ticker.</strong> The first download uses five API
             requests, plus up to three retries per request for temporary
-            failures or quota limits. Repeat searches use your saved statements.
+            failures or quota limits. Repeat searches use your saved statements
+            and prices.
           </li>
         </ol>
         <form onSubmit={save} className="key-form">
@@ -171,10 +172,10 @@ export function DataSettings({
         <div className="saved-stocks">
           <h3>Saved on this device</h3>
           <p className="footnote">
-            Statements live in IndexedDB in this browser profile, separately for
-            each site address. They have no automatic expiry. Use Refresh data
-            to update a stock. Clearing site data or using private browsing can
-            remove saved data.
+            Statements and prices are saved in this browser profile, separately
+            for each site address. They have no automatic expiry. Use Refresh
+            data to update statements and Refresh price to update the chart.
+            Clearing site data or using private browsing can remove saved data.
           </p>
           {stocks.length ? (
             <ul>
@@ -200,7 +201,9 @@ export function DataSettings({
           )}
           {clearing ? (
             <div className="flex flex-wrap items-center gap-3">
-              <span>Remove all saved statements from this browser?</span>
+              <span>
+                Remove all saved statements and prices from this browser?
+              </span>
               <Button variant="destructive" disabled={busy} onClick={clear}>
                 Remove saved statements
               </Button>

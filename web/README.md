@@ -19,7 +19,8 @@ Open http://localhost:4173. The first visit opens **Set up Alpha Vantage**:
    separate verification request consuming quota.
 3. Close settings and enter an Alpha Vantage ticker. Four sequential requests
    fetch income, balance sheet, cash flow, and company overview. Overview is
-   optional: the ticker is used if that call fails.
+   optional: the ticker is used if that call fails. A fifth request loads daily
+   prices independently after the statements open.
 
 The key stays in sessionStorage by default. **Remember my key on this device**
 opts into localStorage; only use it on a trusted device. Keys are sent directly
@@ -39,7 +40,10 @@ dependent; market-price coverage is not a guarantee of statement coverage.
 
 IndexedDB database `financials-alphavantage-v1` stores raw statements in the
 browser profile, scoped to this site's origin. The `stocks` store holds complete
-snapshots and `pending` holds interrupted downloads. They contain no API key.
+snapshots and `pending` holds interrupted downloads. Schema version 3 includes
+`prices` and `metadata` stores, preserving existing statements and price data
+during upgrades. Metadata tracks cache clearing so earlier price downloads
+cannot save afterward, including across tabs. None of these stores contains an API key.
 
 - A saved ticker is read before any network request or key requirement.
 - Cached statements survive reloads, tabs and browser restarts in normal profiles.
@@ -59,6 +63,29 @@ snapshots and `pending` holds interrupted downloads. They contain no API key.
 
 Saved reports need no provider connection. The static app assets must still be
 available to open/reload the page; this is not a service-worker offline app.
+
+## Stock price chart
+
+The price panel shows the latest available daily close and its absolute and
+percentage change from the previous trading session. The [daily price endpoint](https://www.alphavantage.co/documentation/#daily)
+uses the default compact response, with up to 100 trading sessions and support
+for free keys. Prices are unadjusted for splits and dividends, and are not
+real-time quotes. The feed supplies no currency, so the panel labels values as
+exchange quote units instead of assuming the financial statements' currency.
+
+The 1M and 3M controls select calendar windows ending on the latest loaded
+session; All shows every loaded session. These controls and the statement
+fiscal-year controls are independent and use no additional requests. Hover or
+use the chart's keyboard navigation to inspect daily closing prices.
+
+Prices load after statements and are cached independently with no automatic
+refresh. **Refresh price** updates only prices; **Refresh data** updates financial
+statements. A failed price download leaves statements usable, and a failed
+price refresh keeps the previous chart. **Clear saved statements** removes
+prices as well, and prevents pending price downloads from restoring them.
+Those downloads may still finish for the current view without being saved.
+Older saved stocks fetch prices when a key is available;
+without a key they still open, with a setup action in the price panel.
 
 ## Build and deploy
 
@@ -109,7 +136,7 @@ native Tokio market-data abstraction. The selected crate exposes the statement
 functions with less unrelated code. This is a fit decision, not a claim that a
 crate's age or download count guarantees quality.
 
-Provider responses are mapped in `alpha.rs`; calculations stay in Rust. Numeric
+Provider responses are mapped in `alpha.rs`; statement calculations stay in Rust. Numeric
 strings are parsed strictly, and `None`, null, blank and nonfinite values stay
 missing. All available annual periods are retained. Charts show 5 or 10 fiscal
 years in reporting-currency millions; ratios use percentages or multiples.
@@ -144,7 +171,9 @@ Browser tests intercept provider HTTP responses but execute the actual compiled
 Rust client and analysis WASM. They cover setup, key retention/removal, quota
 errors, partial download recovery, explicit refresh, IndexedDB reload/tab reuse,
 cache clearing, no-key cache access, chart calculations, CSV export and mobile
-layout. Fixtures are synthetic; tests do not vet real company financial values.
+layout. Price checks cover daily changes, range selection, keyboard tooltips,
+independent refresh, malformed data, ticker switching, and cache migration.
+Fixtures are synthetic; tests do not vet real company financial values.
 
 The browser suite runs against Vite preview with the same `BASE_PATH` as the
 build. To check repository-subpath hosting locally, run `BASE_PATH=/financials/ npm run build` and `BASE_PATH=/financials/ npm run test:e2e` (each on one line).
