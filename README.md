@@ -1,17 +1,14 @@
 # Financials dashboard
 
-A React dashboard with a Rust WASM analysis engine and a native Rust provider
-service. New downloads prefer **Yahoo Finance → SEC EDGAR → Alpha Vantage**.
-Alpha Vantage is optional and is called only for remaining information that its
-endpoints support. Saved statements and prices remain in browser IndexedDB.
-
+A React dashboard with Rust WASM data acquisition and analysis. The browser
+calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directly. Statements
+and daily prices stay in IndexedDB, with sources preserved per metric and date.
 Charts and tables cover 5 or 10 fiscal years, cash generation, margins and daily
-prices, with CSV export. Sources are preserved per metric and fiscal date.
+prices, with CSV export.
 
 ## Run locally
 
-Requires Rust 1.91+, the WASM target, wasm-bindgen-cli 0.2.126, Node 22.12+ and npm.
-On Linux, native builds also need the OpenSSL development package and pkg-config.
+Requires Rust 1.91+, the WASM target, wasm-bindgen-cli 0.2.126 and Node 22.12+.
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -19,33 +16,33 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cd web
 npm ci
 npm run build
-cd ..
-SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' cargo run -p financial-providers
+npm run preview
 ```
 
-Replace the SEC user agent with your application and real contact email. Open
-http://127.0.0.1:3001. Search without a key; **Data settings** lets you add an
-optional Alpha Vantage key for gaps. The browser sends that key in a POST body
-to the configured service, which forwards it only to Alpha Vantage when needed.
-The service does not persist keys or log request bodies.
-
-For UI development, run the service and `npm run dev` in `web/`; Vite proxies
-`/api` to port 3001. The native service also serves the production `web/dist/`.
+Open the preview URL. For development, run `npm run wasm` then `npm run dev`.
+Search without a key; **Data settings** accepts an optional Alpha Vantage key
+for gaps. Only Alpha Vantage receives that key, directly from browser WASM.
 
 ## Deployment
 
-Run the native service on your server behind HTTPS. `BIND_ADDR` defaults to
-`127.0.0.1:3001`; `WEB_DIST` defaults to `web/dist`. The service must have outbound
-access to Yahoo, SEC and (when used) Alpha Vantage. Multiple service instances
-must coordinate SEC traffic to stay within the SEC's aggregate access limits.
+Serve `web/dist` on any static host, including GitHub Pages. No provider server
+or `VITE_PROVIDER_URL` is required. `BASE_PATH` configures a hosting subdirectory;
+the Pages workflow supplies it automatically.
 
-GitHub Pages can host the static UI, but **cannot run the provider service**.
-For Pages, set the repository variable `VITE_PROVIDER_URL` to your deployed
-HTTPS service URL ending in `/api`, and set `WEB_ORIGIN` on the service to your
-exact Pages origin (scheme and hostname, without the repository path). The
-workflow builds and tests the UI and deploys static assets. Without a configured
-service, existing saved reports remain readable, but new downloads cannot work.
-There is no automatic browser-only Alpha Vantage bypass.
+Requests use browser Fetch through Rust WASM. Browser and upstream access
+policies still apply; this implementation does not bypass CORS. Saved reports
+remain readable when providers are unavailable.
 
-See [provider architecture](docs/providers.md) for selection rules and crate
-choices, and [web notes](web/README.md) for caching and verification.
+The native service remains available for separate API consumers:
+
+```sh
+SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
+  cargo run -p financial-providers --features server
+```
+
+Native builds need OpenSSL development headers and pkg-config on Linux.
+`BIND_ADDR` defaults to `127.0.0.1:3001`, and `WEB_DIST` to `web/dist`.
+The dashboard uses its browser providers even when served by this service.
+
+See [provider architecture](docs/providers.md), [web notes](web/README.md), and
+[local crate patches](vendor/README.md).

@@ -15,10 +15,11 @@ run("cargo", [
   "build",
   "--locked",
   "--release",
+  "--lib",
   "--target",
   "wasm32-unknown-unknown",
   "-p",
-  "yfinance-core",
+  "financial-providers",
 ]);
 const target = process.env.CARGO_TARGET_DIR
   ? path.resolve(root, process.env.CARGO_TARGET_DIR)
@@ -30,6 +31,6 @@ run("wasm-bindgen", [
   "web/src/wasm",
   "--out-name",
   "financial_core",
-  path.join(target, "wasm32-unknown-unknown/release/yfinance_core.wasm"),
+  path.join(target, "wasm32-unknown-unknown/release/financial_providers.wasm"),
 ]);
-console.log("Rust WASM engine and Alpha Vantage client built successfully.");
+console.log("Rust WASM engine and Yahoo, EDGAR, Alpha Vantage clients built successfully.");

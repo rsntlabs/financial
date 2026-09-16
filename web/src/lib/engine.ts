@@ -39,16 +39,22 @@ export async function analyze(
     throw new Error(String(error));
   }
 }
-export async function fetchStatement(
-  key: string,
+const HISTORY_YEARS = 10;
+let providers: import("../wasm/financial_core").BrowserProviders | undefined;
+export async function acquire(
+  endpoint: "financials" | "prices",
   ticker: string,
-  endpoint: string,
-): Promise<Record<string, unknown>> {
+  apiKey: string,
+  endYear?: number,
+): Promise<unknown> {
   const engine = await getEngine();
+  providers ??= new engine.BrowserProviders();
   try {
-    return JSON.parse(
-      await engine.fetch_alpha_statement(key, ticker, endpoint),
-    );
+    const result =
+      endpoint === "financials"
+        ? await providers.financials(ticker, apiKey, HISTORY_YEARS, endYear)
+        : await providers.prices(ticker, apiKey);
+    return JSON.parse(result);
   } catch (error) {
     throw new Error(String(error));
   }

@@ -1,0 +1,101 @@
+use super::{CurrencyHints, hints::CurrencyHintField};
+use crate::core::{CallOptions, YfClient, quotes, quotesummary};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct CurrencyModules {
+    #[serde(rename = "financialData")]
+    financial_data: Option<FinancialDataCurrency>,
+    earnings: Option<EarningsCurrency>,
+}
+
+#[derive(Deserialize)]
+struct FinancialDataCurrency {
+    #[serde(rename = "financialCurrency")]
+    financial_currency: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EarningsCurrency {
+    #[serde(rename = "financialCurrency")]
+    financial_currency: Option<String>,
+}
+
+impl YfClient {
+    pub(super) async fn enrich_quote_hints(&self, symbol: &str, options: &CallOptions) {
+        let hints = self.cached_currency_hints(symbol);
+        if !hints.is_unknown(CurrencyHintField::Quote)
+            && !hints.is_unknown(CurrencyHintField::Financial)
+        {
+            return;
+        }
+
+        let symbols = [symbol];
+        if let Err(err) = quotes::fetch_v7_quotes(self, &symbols, options).await {
+            crate::core::logging::trace_debug!(
+                symbol,
+                error = %err,
+                "failed to enrich currency hints from quote"
+            );
+            #[cfg(not(feature = "tracing"))]
+            let _ = err;
+        }
+    }
+
+    pub(super) async fn enrich_quote_summary_reporting_hints(
+        &self,
+        symbol: &str,
+        options: &CallOptions,
+    ) {
+        if !self
+            .cached_currency_hints(symbol)
+            .is_unknown(CurrencyHintField::QuoteSummaryFinancial)
+        {
+            return;
+        }
+
+        let Ok(modules) = quotesummary::fetch_module_result::<CurrencyModules>(
+            self,
+            symbol,
+            "financialData,earnings",
+            "currency",
+            options,
+        )
+        .await
+        else {
+            return;
+        };
+
+        let financial_currency = modules
+            .financial_data
+            .and_then(|node| node.financial_currency)
+            .or_else(|| modules.earnings.and_then(|node| node.financial_currency));
+
+        self.store_currency_hints(
+            symbol,
+            CurrencyHints::from_quote_summary_financial(financial_currency.as_deref()),
+        );
+    }
+
+    pub(super) async fn enrich_profile_hints(&self, symbol: &str, options: &CallOptions) {
+        if !self
+            .cached_currency_hints(symbol)
+            .is_unknown(CurrencyHintField::ProfileCountry)
+        {
+            return;
+        }
+
+        let Ok(profile) = crate::profile::load_profile_with_options(self, symbol, options).await
+        else {
+            return;
+        };
+
+        if let crate::profile::Profile::Company(company) = profile {
+            let country = company
+                .address
+                .as_ref()
+                .and_then(|address| address.country.as_deref());
+            self.store_currency_hints(symbol, CurrencyHints::from_profile(country, None, None));
+        }
+    }
+}

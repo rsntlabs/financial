@@ -84,8 +84,8 @@ export function DataSettings({
         <p className="footnote">
           Yahoo Finance is tried first, then SEC EDGAR. You can search without a
           key. Add an Alpha Vantage key only to fill remaining gaps. Your key is
-          sent to the configured financial data service, which uses it only for
-          fallback requests.
+          sent directly from your browser to Alpha Vantage only for fallback
+          requests.
           <a
             href="https://www.alphavantage.co/support/#api-key"
             target="_blank"

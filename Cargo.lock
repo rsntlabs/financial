@@ -387,9 +387,8 @@ dependencies = [
 [[package]]
 name = "edgar-rs"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09d7e5b5d31b0fa71542c3716040472f3e517ce2864f51d300b60c9824fb0208"
 dependencies = [
+ "futures-timer",
  "governor",
  "reqwest",
  "serde",
@@ -443,12 +442,18 @@ dependencies = [
  "axum",
  "chrono",
  "edgar-rs",
+ "futures",
+ "futures-timer",
+ "getrandom 0.3.4",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tower",
  "tower-http",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-time",
  "yfinance-core",
  "yfinance-rs",
 ]
@@ -576,6 +581,10 @@ name = "futures-timer"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af43fadb8a98512d547e37b4e92e0ced13e205c061b87b4623eff01d918d6968"
+dependencies = [
+ "gloo-timers",
+ "send_wrapper",
+]
 
 [[package]]
 name = "futures-util"
@@ -632,6 +641,18 @@ dependencies = [
  "libc",
  "r-efi 6.0.0",
  "rand_core 0.10.1",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "gloo-timers"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "482ce8a491a501da4cd806bd190275363d674f2845005c6ddbd5d3e1dd54495d"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
  "wasm-bindgen",
 ]
 
@@ -2709,23 +2730,24 @@ dependencies = [
 [[package]]
 name = "yfinance-rs"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d71693be5300f2e9b1cee66f2efe6ea08655583333dcbf314c14c2f6807ce07a"
 dependencies = [
  "chrono",
  "chrono-tz",
  "futures",
+ "futures-timer",
  "getrandom 0.3.4",
  "moka",
  "paft",
  "reqwest",
  "rust_decimal",
+ "send_wrapper",
  "serde",
  "serde_field_result",
  "serde_json",
  "tokio",
  "unicode-normalization",
  "url",
+ "web-time",
 ]
 
 [[package]]

@@ -21,7 +21,7 @@ function validatePrices(history: PriceHistory, ticker: string): PriceHistory {
     )
   )
     throw new Error(
-      "The data service returned malformed daily prices. No price data was saved.",
+      "The provider returned malformed daily prices. No price data was saved.",
     );
   return {
     ...history,

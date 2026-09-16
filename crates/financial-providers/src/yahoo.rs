@@ -31,7 +31,8 @@ fn insert(data: &mut Dataset, end: &str, metric: &str, money: Option<Money>) {
     data.currency = Some(currency);
     data.insert(metric, end, value, "Yahoo Finance");
 }
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Provider for Yahoo {
     fn name(&self) -> &'static str {
         "Yahoo Finance"
@@ -157,19 +158,26 @@ impl Provider for Yahoo {
 // yfinance-rs projects a subset of statement rows. Query the same Yahoo endpoint
 // for the dashboard's remaining metric IDs before considering another provider.
 async fn extended_statement(ticker: &str) -> Result<Dataset, String> {
+    #[cfg(not(target_arch = "wasm32"))]
     use reqwest::header::{COOKIE, SET_COOKIE};
     use serde_json::Value;
-    let http = reqwest::Client::builder()
+    let builder = reqwest::Client::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder
         .user_agent("Mozilla/5.0")
-        .timeout(std::time::Duration::from_secs(25))
+        .timeout(std::time::Duration::from_secs(25));
+    let http = builder
         .build()
         .map_err(|_| "Yahoo transport unavailable.")?;
-    let response = http
-        .get("https://fc.yahoo.com")
+    let session = http.get("https://fc.yahoo.com");
+    #[cfg(target_arch = "wasm32")]
+    let session = session.fetch_credentials_include();
+    let _response = session
         .send()
         .await
         .map_err(|_| "Yahoo session unavailable.")?;
-    let cookie = response
+    #[cfg(not(target_arch = "wasm32"))]
+    let cookie = _response
         .headers()
         .get_all(SET_COOKIE)
         .iter()
@@ -177,12 +185,16 @@ async fn extended_statement(ticker: &str) -> Result<Dataset, String> {
         .filter_map(|v| v.split(';').next())
         .collect::<Vec<_>>()
         .join("; ");
+    #[cfg(not(target_arch = "wasm32"))]
     if cookie.is_empty() {
         return Err("Yahoo session unavailable.".into());
     }
-    let crumb = http
-        .get("https://query1.finance.yahoo.com/v1/test/getcrumb")
-        .header(COOKIE, &cookie)
+    let auth = http.get("https://query1.finance.yahoo.com/v1/test/getcrumb");
+    #[cfg(not(target_arch = "wasm32"))]
+    let auth = auth.header(COOKIE, &cookie);
+    #[cfg(target_arch = "wasm32")]
+    let auth = auth.fetch_credentials_include();
+    let crumb = auth
         .send()
         .await
         .map_err(|_| "Yahoo authentication unavailable.")?
@@ -213,9 +225,12 @@ async fn extended_statement(ticker: &str) -> Result<Dataset, String> {
             &(chrono::Utc::now().timestamp() + 86400).to_string(),
         )
         .append_pair("crumb", &crumb);
-    let body: Value = http
-        .get(url)
-        .header(COOKIE, cookie)
+    let statement = http.get(url);
+    #[cfg(not(target_arch = "wasm32"))]
+    let statement = statement.header(COOKIE, cookie);
+    #[cfg(target_arch = "wasm32")]
+    let statement = statement.fetch_credentials_include();
+    let body: Value = statement
         .send()
         .await
         .map_err(|_| "Yahoo extended statements unavailable.")?

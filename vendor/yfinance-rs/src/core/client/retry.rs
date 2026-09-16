@@ -1,0 +1,186 @@
+use crate::core::error::YfError;
+
+const MAX_RETRIES: u32 = 100;
+
+/// Specifies the backoff strategy for retrying failed requests.
+#[derive(Clone, Debug)]
+pub enum Backoff {
+    /// Uses a fixed delay between retries.
+    Fixed(std::time::Duration),
+    /// Uses an exponential delay between retries.
+    /// The delay is calculated as `base * (factor ^ attempt)`.
+    Exponential {
+        /// The initial backoff duration.
+        base: std::time::Duration,
+        /// The multiplicative factor for each subsequent retry.
+        factor: f64,
+        /// The maximum duration to wait between retries.
+        max: std::time::Duration,
+        /// Whether to apply random jitter (+/- 50%) to the delay.
+        jitter: bool,
+    },
+}
+
+impl Backoff {
+    /// Validates that this backoff strategy can be used without panicking during retry scheduling.
+    ///
+    /// # Errors
+    ///
+    /// Returns `YfError::InvalidParams` when exponential backoff has a non-finite or
+    /// non-positive factor.
+    pub fn validate(&self) -> Result<(), YfError> {
+        match self {
+            Self::Exponential { factor, .. } if !factor.is_finite() || *factor <= 0.0 => {
+                Err(YfError::InvalidParams(
+                    "retry exponential backoff factor must be finite and greater than zero".into(),
+                ))
+            }
+            Self::Fixed(_) | Self::Exponential { .. } => Ok(()),
+        }
+    }
+}
+
+/// Configuration for the automatic retry mechanism.
+#[derive(Clone, Debug)]
+pub struct RetryConfig {
+    /// Enables or disables the retry mechanism.
+    pub enabled: bool,
+    /// The maximum number of retries to attempt. The total number of attempts will be `max_retries + 1`.
+    pub max_retries: u32,
+    /// The backoff strategy to use between retries.
+    pub backoff: Backoff,
+    /// A list of HTTP status codes that should trigger a retry.
+    pub retry_on_status: Vec<u16>,
+    /// Whether to retry on request timeouts.
+    pub retry_on_timeout: bool,
+    /// Whether to retry on connection errors.
+    pub retry_on_connect: bool,
+}
+
+impl RetryConfig {
+    /// Highest accepted retry count for enabled retry policies.
+    pub const MAX_RETRIES: u32 = MAX_RETRIES;
+
+    /// Validates that this retry policy can be used safely.
+    ///
+    /// Disabled retry policies skip retry-specific validation because the retry
+    /// fields are not observed while sending requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns `YfError::InvalidParams` when an enabled policy has too many
+    /// retries or an invalid backoff strategy.
+    pub fn validate(&self) -> Result<(), YfError> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        if self.max_retries > Self::MAX_RETRIES {
+            return Err(YfError::InvalidParams(format!(
+                "retry max_retries cannot exceed {}",
+                Self::MAX_RETRIES
+            )));
+        }
+
+        self.backoff.validate()
+    }
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_retries: 4,
+            backoff: Backoff::Exponential {
+                base: std::time::Duration::from_millis(200),
+                factor: 2.0,
+                max: std::time::Duration::from_secs(3),
+                jitter: true,
+            },
+            retry_on_status: vec![408, 429, 500, 502, 503, 504],
+            retry_on_timeout: true,
+            retry_on_connect: true,
+        }
+    }
+}
+
+/// Defines the behavior of the in-memory cache for an API call.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CacheMode {
+    /// Use the endpoint's default cache policy.
+    ///
+    /// Volatile endpoints, such as quotes, options, news, and screeners, bypass
+    /// the cache by default. More stable endpoints, such as historical charts,
+    /// quote summaries, fundamentals, profile HTML, and search, use the cache
+    /// when client-side caching is enabled.
+    #[default]
+    Default,
+    /// Read from the cache if a non-expired entry is present; otherwise, fetch from the network
+    /// and write the response to the cache.
+    Use,
+    /// Always fetch from the network, bypassing any cached entry, and write the new response to the cache.
+    Refresh,
+    /// Always fetch from the network and do not read from or write to the cache.
+    Bypass,
+}
+
+/// Endpoint buckets used by the in-memory response cache.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CacheEndpoint {
+    /// The v7 quote endpoint.
+    Quote,
+    /// The historical chart endpoint.
+    Chart,
+    /// The v10 quoteSummary endpoint.
+    QuoteSummary,
+    /// The fundamentals-timeseries endpoint.
+    Fundamentals,
+    /// The v7 options endpoint.
+    Options,
+    /// The news endpoint.
+    News,
+    /// The search endpoint.
+    Search,
+    /// Screener endpoints.
+    Screener,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EffectiveCacheMode {
+    Use,
+    Refresh,
+    Bypass,
+}
+
+impl CacheEndpoint {
+    const fn default_mode(self) -> EffectiveCacheMode {
+        match self {
+            Self::Quote | Self::Options | Self::News | Self::Screener => EffectiveCacheMode::Bypass,
+            Self::Chart | Self::QuoteSummary | Self::Fundamentals | Self::Search => {
+                EffectiveCacheMode::Use
+            }
+        }
+    }
+}
+
+impl CacheMode {
+    const fn effective(self, endpoint: CacheEndpoint) -> EffectiveCacheMode {
+        match self {
+            Self::Default => endpoint.default_mode(),
+            Self::Use => EffectiveCacheMode::Use,
+            Self::Refresh => EffectiveCacheMode::Refresh,
+            Self::Bypass => EffectiveCacheMode::Bypass,
+        }
+    }
+
+    pub(crate) const fn reads(self, endpoint: CacheEndpoint) -> bool {
+        matches!(self.effective(endpoint), EffectiveCacheMode::Use)
+    }
+
+    pub(crate) const fn writes(self, endpoint: CacheEndpoint) -> bool {
+        matches!(
+            self.effective(endpoint),
+            EffectiveCacheMode::Use | EffectiveCacheMode::Refresh
+        )
+    }
+}

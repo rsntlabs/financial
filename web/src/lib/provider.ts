@@ -38,9 +38,7 @@ export function loadStock(
       endYear,
     );
     if (payload.schemaVersion !== 1)
-      throw new Error(
-        "Financial data service returned an unsupported response.",
-      );
+      throw new Error("Providers returned an unsupported response.");
     await analyze(ticker, payload, 5, endYear);
     let warning = "";
     try {

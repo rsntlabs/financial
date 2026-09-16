@@ -1,74 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
-const API = "**/api/*";
-const KEY = "TESTKEY123";
-function fixture() {
-  const values = {
-    annualTotalRevenue: 100e6,
-    annualNetIncome: 10e6,
-    annualCostOfRevenue: 40e6,
-    annualGrossProfit: 60e6,
-    annualNetPPE: 150e6,
-    annualGrossPPE: 200e6,
-    annualTotalAssets: 300e6,
-    annualTotalLiabilitiesNetMinorityInterest: 100e6,
-    annualCapitalExpenditure: 20e6,
-    annualDepreciationAmortizationDepletion: 10e6,
-    annualOperatingCashFlow: 30e6,
-  };
-  return {
-    schemaVersion: 1,
-    name: "Test Industries",
-    currency: "USD",
-    fetchedAt: "2026-09-16T00:00:00Z",
-    metrics: Object.fromEntries(
-      Object.entries(values).map(([key, value]) => [
-        key,
-        Object.fromEntries(
-          [2021, 2022, 2023, 2024, 2025].map((y) => [
-            `${y}-12-31`,
-            key === "annualNetIncome" && y === 2023 ? -5e6 : value * (y - 2020),
-          ]),
-        ),
-      ]),
-    ),
-    sources: {
-      annualTotalRevenue: { "2025-12-31": "Yahoo Finance" },
-      annualNetPPE: { "2025-12-31": "SEC EDGAR" },
-    },
-    warnings: ["Sources: Yahoo Finance, SEC EDGAR."],
-  };
-}
-function priceFixture(ticker = "TEST") {
-  return {
-    ticker,
-    fetchedAt: "2026-09-16T00:00:00Z",
-    source: "Yahoo Finance",
-    outputSize: "full",
-    points: [
-      { date: "2026-05-15", close: 100 },
-      { date: "2026-06-16", close: 105 },
-      { date: "2026-08-14", close: 110 },
-      { date: "2026-09-01", close: 115 },
-      { date: "2026-09-14", close: 120 },
-      { date: "2026-09-15", close: 126 },
-    ],
-  };
-}
-async function stub(page: Page, calls: string[] = [], key = "") {
-  await page.route(API, (route) => {
-    const endpoint = new URL(route.request().url()).pathname.split("/").at(-1)!;
-    const body = route.request().postDataJSON();
-    expect(body.apiKey).toBe(key);
-    expect(route.request().url()).not.toContain(KEY);
-    calls.push(endpoint);
-    return route.fulfill({
-      json: endpoint === "financials" ? fixture() : priceFixture(body.ticker),
-    });
-  });
-  await page.route("https://www.alphavantage.co/**", () => {
-    throw new Error("Browser must never bypass provider priority");
-  });
-}
+import {
+  HTTP,
+  UPSTREAM,
+  STATEMENTS,
+  CHART,
+  KEY,
+  fixture,
+  priceFixture,
+  timeseries,
+  fulfillChart,
+  stub,
+} from "./upstream";
 async function setup(page: Page, remember = false) {
   await page.getByRole("button", { name: "Data settings" }).click();
   await expect(
@@ -90,7 +32,7 @@ async function search(page: Page, symbol = "TEST") {
     page.getByRole("button", { name: "Refresh price", exact: true }),
   ).toBeEnabled({ timeout: 15000 });
 }
-test("keyless provider service and actual WASM render annual figures, statement views, CSV and neutral layout", async ({
+test("keyless browser providers and actual WASM render annual figures, statement views, CSV and neutral layout", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -212,7 +154,7 @@ test("cache survives reload and another tab, and period changes make no requests
   expect(more).toEqual(["financials"]);
 });
 
-test("optional keys use POST only, are not cached with data, and can be forgotten", async ({
+test("optional keys go only to Alpha Vantage, are not cached with data, and can be forgotten", async ({
   page,
 }) => {
   await stub(page, [], KEY);
@@ -232,7 +174,7 @@ test("optional keys use POST only, are not cached with data, and can be forgotte
     return JSON.stringify(rows);
   });
   expect(cached).not.toContain(KEY);
-  expect(cached).toContain("SEC EDGAR");
+  expect(cached).toContain("Yahoo Finance");
   await page.getByRole("button", { name: "Data settings" }).click();
   await page.getByRole("button", { name: "Forget API key" }).click();
   expect(
@@ -252,18 +194,18 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await stub(page);
   await page.goto("./");
   await search(page);
-  await page.unroute(API);
-  await page.route(API, (r) =>
-    r.fulfill({ status: 502, json: { error: "Providers unavailable" } }),
+  await page.unroute(UPSTREAM);
+  await page.route(UPSTREAM, (r) =>
+    r.fulfill({ status: HTTP.NOT_FOUND, json: {} }),
   );
   await page
     .getByRole("button", { name: "Refresh price", exact: true })
     .click();
-  await expect(page.getByText("Providers unavailable")).toBeVisible();
+  await expect(page.getByText(/Daily prices unavailable/)).toBeVisible();
   await expect(page.locator(".price-value")).toHaveText("126.00");
   await page.getByRole("button", { name: "Refresh data", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText(
-    "Providers unavailable",
+    "No annual revenue available",
   );
   await page.reload();
   await search(page);
@@ -282,10 +224,10 @@ for (const scenario of ["download", "refresh", "refresh in another tab"]) {
     let started!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const pending = new Promise<void>((r) => (started = r));
-    await page.route("**/api/prices", async (r) => {
+    await page.route(CHART, async (r) => {
       started();
       await gate;
-      await r.fulfill({ json: priceFixture() });
+      await fulfillChart(r);
     });
     if (scenario === "download") {
       await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
@@ -328,28 +270,25 @@ for (const scenario of ["download", "refresh", "refresh in another tab"]) {
   });
 }
 
-test("missing data is a gap, malformed service responses are not saved", async ({
+test("missing data is a gap, empty upstream responses are not saved", async ({
   page,
 }) => {
   await stub(page);
-  await page.route("**/api/financials", (r) =>
+  await page.route(STATEMENTS, (r) =>
     r.fulfill({
-      json: {
-        ...fixture(),
-        metrics: { annualTotalRevenue: { "not-a-date": 100 } },
-      },
+      json: { timeseries: { result: [], error: null } },
     }),
   );
   await page.goto("./");
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
   await page.getByRole("button", { name: "Explore financials" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Invalid annual financial data",
+    "No annual revenue available",
   );
-  await page.unroute("**/api/financials");
+  await page.unroute(STATEMENTS);
   const data = fixture();
   delete data.metrics.annualNetIncome;
-  await page.route("**/api/financials", (r) => r.fulfill({ json: data }));
+  await page.route(STATEMENTS, (r) => r.fulfill({ json: timeseries(data) }));
   await search(page);
   await page.locator("summary").click();
   await expect(page.getByText(/FY 2025: net income unavailable/)).toBeVisible();
@@ -363,13 +302,13 @@ test("prices load separately and stale ticker responses cannot replace the curre
   let started!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   const pending = new Promise<void>((r) => (started = r));
-  await page.route("**/api/prices", async (r) => {
-    const ticker = r.request().postDataJSON().ticker;
+  await page.route(CHART, async (r) => {
+    const ticker = new URL(r.request().url()).pathname.split("/").at(-1)!;
     if (ticker === "TEST") {
       started();
       await gate;
     }
-    await r.fulfill({ json: priceFixture(ticker) });
+    await fulfillChart(r, priceFixture(ticker));
   });
   await page.goto("./");
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
@@ -403,7 +342,7 @@ test("all available price history is preserved and calendar controls stay local"
   }
   const calls: string[] = [];
   await stub(page, calls);
-  await page.route("**/api/prices", (r) => r.fulfill({ json: prices }));
+  await page.route(CHART, (r) => fulfillChart(r, prices));
   await page.goto("./");
   await search(page);
   const panel = page.getByRole("region", { name: "TEST stock price" });

@@ -4,9 +4,10 @@ use chrono::NaiveDate;
 use edgar_rs::{CompanyFacts, Fact};
 use std::{
     collections::{BTreeSet, HashMap},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tokio::sync::Mutex;
+use web_time::Instant;
 use yfinance_core::dataset::Dataset;
 
 // Ordered aliases: prefer consolidated revenue and income over narrower concepts.
@@ -220,16 +221,18 @@ pub struct Edgar {
 }
 impl Edgar {
     pub fn new(user_agent: &str) -> Result<Self, String> {
+        #[cfg(not(target_arch = "wasm32"))]
         if !user_agent.contains('@') {
             return Err(
                 "Set SEC_USER_AGENT to your application name and real contact email.".into(),
             );
         }
-        let http = reqwest::Client::builder()
+        let builder = reqwest::Client::builder();
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder
             .user_agent(user_agent)
-            .timeout(Duration::from_secs(25))
-            .build()
-            .map_err(|_| "Invalid SEC user agent.")?;
+            .timeout(Duration::from_secs(25));
+        let http = builder.build().map_err(|_| "Invalid SEC user agent.")?;
         // edgar-rs does not apply its user agent when a custom client is supplied.
         let client = edgar_rs::ClientBuilder::new(user_agent)
             .http_client(http.clone())
@@ -247,7 +250,8 @@ impl Edgar {
         })
     }
 }
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Provider for Edgar {
     fn name(&self) -> &'static str {
         "SEC EDGAR"

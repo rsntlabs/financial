@@ -1,7 +1,9 @@
-//! Native data acquisition: Yahoo, then SEC EDGAR, then optional Alpha Vantage.
-//! The browser/WASM analysis crate stays independent of native networking crates.
+//! Browser and native acquisition: Yahoo, SEC EDGAR, then optional Alpha Vantage.
 pub mod alpha;
+#[cfg(target_arch = "wasm32")]
+mod browser;
 pub mod edgar;
+mod runtime;
 pub mod yahoo;
 use async_trait::async_trait;
 use chrono::{Datelike, Utc};
@@ -78,7 +80,8 @@ pub struct Prices {
     pub source: String,
     pub output_size: String,
 }
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Provider: Send + Sync {
     fn name(&self) -> &'static str;
     async fn financials(&self, request: &Request, needs: &Needs) -> Result<Dataset, String>;
@@ -111,8 +114,8 @@ impl<'a> ProviderChain<'a> {
             if needs.empty() {
                 break;
             }
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(75),
+            match runtime::timeout(
+                runtime::PROVIDER_TIMEOUT,
                 provider.financials(request, &needs),
             )
             .await
@@ -152,7 +155,9 @@ impl<'a> ProviderChain<'a> {
     pub async fn prices(&self, ticker: &str) -> Result<Prices, String> {
         let ticker = yfinance_core::normalize_ticker(ticker)?;
         for provider in &self.providers {
-            if let Ok(Some(mut points)) = provider.prices(&ticker).await {
+            if let Ok(Ok(Some(mut points))) =
+                runtime::timeout(runtime::PROVIDER_TIMEOUT, provider.prices(&ticker)).await
+            {
                 if points.iter().any(|p| {
                     chrono::NaiveDate::parse_from_str(&p.date, "%Y-%m-%d").is_err()
                         || !p.close.is_finite()
@@ -187,7 +192,8 @@ mod tests {
         calls: &'a Mutex<Vec<String>>,
         prices: Option<Vec<PricePoint>>,
     }
-    #[async_trait]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
     impl Provider for Fake<'_> {
         fn name(&self) -> &'static str {
             self.name

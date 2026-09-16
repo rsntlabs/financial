@@ -1,0 +1,64 @@
+mod builder;
+mod wire;
+
+pub use builder::HistoryBuilder;
+
+use crate::core::{
+    HistoryRequest, HistoryResponse, HistoryService, YfClient, YfError,
+    currency_resolver::ResolvedCurrencyUnit,
+};
+use paft::domain::Instrument;
+
+#[derive(Debug)]
+pub(crate) struct YahooHistoryResponse {
+    pub(crate) response: HistoryResponse,
+    pub(crate) price_hint: Option<u32>,
+    pub(crate) currency_unit: Option<ResolvedCurrencyUnit>,
+    pub(crate) instrument: Option<Instrument>,
+}
+
+impl HistoryService for YfClient {
+    async fn fetch_full_history(
+        &self,
+        symbol: &str,
+        req: HistoryRequest,
+    ) -> Result<HistoryResponse, YfError> {
+        // Own everything the async block needs:
+        let request = async {
+            let client = self.clone(); // YfClient: Clone
+            let symbol = symbol.to_owned(); // own the symbol
+            // HistoryBuilder::new(&YfClient, impl Into<String>) clones internally,
+            // so passing &client here is fine.
+            let mut hb = builder::HistoryBuilder::new(&client, &symbol)
+                .interval(req.interval)
+                .auto_adjust(req.auto_adjust)
+                .prepost(req.include_prepost)
+                .actions(req.include_actions);
+
+            if let Some((p1, p2)) = req.period {
+                use chrono::{TimeZone, Utc};
+                let start = Utc
+                    .timestamp_opt(p1, 0)
+                    .single()
+                    .ok_or(YfError::InvalidParams("invalid period1".into()))?;
+                let end = Utc
+                    .timestamp_opt(p2, 0)
+                    .single()
+                    .ok_or(YfError::InvalidParams("invalid period2".into()))?;
+                hb = hb.between(start, end);
+            } else if let Some(r) = req.range {
+                hb = hb.range(r);
+            }
+
+            hb.fetch_full().await
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            send_wrapper::SendWrapper::new(request).await
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            request.await
+        }
+    }
+}

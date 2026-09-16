@@ -1,0 +1,130 @@
+use crate::core::{
+    CallOptions, ProjectionContext, YfClient, YfError, YfResponse, models::Quote, quotes,
+};
+use paft::fundamentals::statistics::KeyStatistics;
+
+use super::FastInfo;
+
+fn log_err<T>(
+    ctx: &mut ProjectionContext,
+    res: Result<T, YfError>,
+    name: &'static str,
+    symbol: &str,
+) -> Result<Option<T>, YfError> {
+    match res {
+        Ok(data) => Ok(Some(data)),
+        Err(e) => {
+            crate::core::logging::trace_debug!(
+                symbol,
+                module = name,
+                error = %e,
+                "optional key statistics module fetch failed"
+            );
+            #[cfg(not(feature = "tracing"))]
+            let _ = (name, symbol, &e);
+            ctx.suppressed_error(name, &e)?;
+            Ok(None)
+        }
+    }
+}
+
+pub async fn fetch_quote(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<Quote, YfError> {
+    Ok(fetch_quote_with_diagnostics(client, symbol, options)
+        .await?
+        .into_data())
+}
+
+pub async fn fetch_quote_with_diagnostics(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<YfResponse<Quote>, YfError> {
+    let mut ctx = ProjectionContext::new("quote", options.data_quality());
+    let symbols = [symbol];
+    let results = quotes::fetch_v7_quote_values(client, &symbols, options).await?;
+    let nodes = quotes::quote_nodes_from_values_with_context(client, &symbols, results, &mut ctx)?;
+    let result = quotes::required_quote_node_from_nodes(nodes, symbol)?;
+
+    let quote = result.to_quote_with_context(&mut ctx)?;
+    Ok(ctx.finish(quote))
+}
+
+pub async fn fetch_fast_info(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<FastInfo, YfError> {
+    Ok(fetch_fast_info_with_diagnostics(client, symbol, options)
+        .await?
+        .into_data())
+}
+
+pub async fn fetch_fast_info_with_diagnostics(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<YfResponse<FastInfo>, YfError> {
+    let mut ctx = ProjectionContext::new("fast_info", options.data_quality());
+    let symbols = [symbol];
+    let results = quotes::fetch_v7_quote_values(client, &symbols, options).await?;
+    let nodes = quotes::quote_nodes_from_values_with_context(client, &symbols, results, &mut ctx)?;
+    let result = quotes::required_quote_node_from_nodes(nodes, symbol)?;
+
+    let fast_info = result.to_fast_info_with_context(&mut ctx)?;
+    Ok(ctx.finish(fast_info))
+}
+
+pub async fn fetch_key_statistics(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<KeyStatistics, YfError> {
+    Ok(
+        fetch_key_statistics_with_diagnostics(client, symbol, options)
+            .await?
+            .into_data(),
+    )
+}
+
+pub async fn fetch_key_statistics_with_diagnostics(
+    client: &YfClient,
+    symbol: &str,
+    options: &CallOptions,
+) -> Result<YfResponse<KeyStatistics>, YfError> {
+    let mut ctx = ProjectionContext::new("key_statistics", options.data_quality());
+    let symbols = [symbol];
+    let (quote_res, quote_summary_res) = tokio::join!(
+        quotes::fetch_v7_quote_values(client, &symbols, options),
+        quotes::fetch_quote_summary_key_statistics(client, symbol, options)
+    );
+
+    let values = quote_res?;
+    if values.is_empty() {
+        return Err(YfError::MissingData(format!(
+            "no quote result found for symbol {symbol}"
+        )));
+    }
+    let nodes = quotes::quote_nodes_from_values_with_context(client, &symbols, values, &mut ctx)?;
+    let stats = match quotes::first_quote_node_from_nodes(nodes) {
+        Some(result) => result.to_key_statistics_with_context(&mut ctx)?,
+        None => KeyStatistics::default(),
+    };
+    let stats = match log_err(
+        &mut ctx,
+        quote_summary_res,
+        "quote_summary_key_statistics",
+        symbol,
+    )? {
+        Some(quote_summary) => {
+            let quote_summary = quote_summary.into_key_statistics_with_context(&mut ctx, symbol)?;
+            quotes::merge_key_statistics(stats, &quote_summary)
+        }
+        None => stats,
+    };
+
+    Ok(ctx.finish(stats))
+}
