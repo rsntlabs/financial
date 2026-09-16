@@ -18,10 +18,10 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cd web
 npm ci
 npm run build
-npm start
+npm run preview -- --host 127.0.0.1
 ```
 
-Open http://localhost:3000, choose **Set up Alpha Vantage**, save your key, and
+Open http://localhost:4173, choose **Set up Alpha Vantage**, save your key, and
 enter a ticker. Saved data is reused until you refresh or clear it. Fetches retry
 up to three times on transient failures and quota limits.
 
@@ -38,11 +38,11 @@ directory over HTTP or HTTPS; opening the HTML with `file://` is unsupported.
    push ran before Pages was enabled, rerun the workflow after step 2.
 
 The [workflow](.github/workflows/web.yml) builds Rust/WASM and the dashboard,
-runs Rust, static-server and browser checks, then deploys `web/dist/`. The Pages
-configuration supplies the correct base path for repository sites, user sites
-and configured custom domains. Pull requests and other branches run checks under
-a sample repository subpath without deploying. The deployment URL appears in
-the workflow's `github-pages` environment.
+runs Rust and browser checks, then deploys only the static `web/dist/` output.
+The Pages configuration supplies the correct base path for repository sites,
+user sites and configured custom domains. Pull requests and other branches run
+checks under a sample repository subpath without deploying. The deployment URL
+appears in the workflow's `github-pages` environment.
 
 No Alpha Vantage secret is needed in GitHub Actions. Each visitor enters their
 own key in the browser. Cached data and keys are local to the browser and site

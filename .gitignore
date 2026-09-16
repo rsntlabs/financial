@@ -7,3 +7,6 @@
 /web/playwright-report/
 /web/.env*
 !/web/.env.example
+.DS_Store
+Thumbs.db
+*.log

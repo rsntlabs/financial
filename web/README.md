@@ -7,11 +7,11 @@ The interface uses shadcn's default neutral dark theme and chart colors.
 ## Start and set up your key
 
 ```sh
-# Repository root, after building
-node web/server/index.mjs
+# From web/, after building
+npm run preview -- --host 127.0.0.1
 ```
 
-Open http://localhost:3000. The first visit opens **Set up Alpha Vantage**:
+Open http://localhost:4173. The first visit opens **Set up Alpha Vantage**:
 
 1. Follow the link to https://www.alphavantage.co/support/#api-key and create a key.
 2. Paste it into the password field and choose **Save API key**. This stores the
@@ -70,19 +70,19 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cd web
 npm ci
 npm run build
-npm start
+npm run preview -- --host 127.0.0.1
 ```
 
 `npm run build` compiles Rust to WASM, generates bindings, checks TypeScript, and
 builds `web/dist/`. Upload **all of dist/** to any HTTPS static host. Serve WASM
 as `application/wasm`. Use HTTP on localhost for development, not `file://`.
-No financial-data backend or MCP server is required. Alpha Vantage currently
-allows cross-origin browser API requests. `server/index.mjs` is only a static
-file server with a health endpoint, not a data proxy. `HOST`/`PORT` configure it.
+No financial-data backend, application server, container, or MCP server is
+required. Alpha Vantage currently allows cross-origin browser API requests.
+`npm run preview` is for local inspection only; production deployment consists
+solely of the generated files in `dist/`.
 
 For subdirectory hosting, set `BASE_PATH=/financials/` during the build.
 For development use `npm run dev`; run `npm run wasm` after Rust changes.
-The root Dockerfile also builds and serves the static output.
 
 For **GitHub Pages**, enable **Settings → Pages → Source → GitHub Actions**, then
 push to the default branch or manually run **Web, WASM and GitHub Pages** on that
@@ -136,7 +136,6 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cd web
 npm run build
-npm test
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
@@ -150,4 +149,4 @@ layout. Fixtures are synthetic; tests do not vet real company financial values.
 The browser suite runs against Vite preview with the same `BASE_PATH` as the
 build. To check repository-subpath hosting locally, run `BASE_PATH=/financials/ npm run build` and `BASE_PATH=/financials/ npm run test:e2e` (each on one line).
 CI uses the configured Pages base path for deployments and `/financials/` for
-other branches. The separate static-server test covers the optional Node host.
+other branches.
