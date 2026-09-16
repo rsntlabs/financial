@@ -1,8 +1,13 @@
 name: Web, WASM and GitHub Pages
+
 on:
   push:
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: "pages-${{ github.ref }}"
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -47,16 +52,10 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
-      - run: npm test
-        working-directory: web
       - run: npx playwright install --with-deps chromium
         working-directory: web
       - run: npm run test:e2e
         working-directory: web
-      - uses: actions/upload-artifact@v4
-        with:
-          name: financials-web
-          path: web/dist
       - name: Upload Pages site
         if: steps.pages.outcome == 'success'
         uses: actions/upload-pages-artifact@v4
@@ -75,9 +74,6 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

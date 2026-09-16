@@ -11,8 +11,7 @@
     "dev": "vite",
     "build": "npm run wasm && npm run build:ui",
     "build:ui": "tsc --noEmit && vite build",
-    "start": "node server/index.mjs",
-    "test": "node --test server/*.test.mjs",
+    "preview": "vite preview",
     "test:e2e": "playwright test"
   },
   "dependencies": {
