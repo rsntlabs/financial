@@ -133,18 +133,28 @@ pub async fn fetch_statement(key: &str, ticker: &str, function: &str) -> Result<
         return Err("Unsupported financial data request.".into());
     }
     let api = ApiClient::set_api(key, Transport);
-    // Daily prices use the default compact output (100 sessions), available on free keys.
+    // Request every available daily session, rather than the default 100-session window.
     // The crate's documented custom builder covers statements and price endpoints.
     // Validated/encoded inputs are needed because that builder concatenates its query.
     let ticker = ticker.replace('^', "%5E").replace('=', "%3D");
     request_with_retries(
-        || async { api.custom(function).extra_params("symbol", &ticker).json::<Value>().await },
+        || async {
+            let mut request = api.custom(function);
+            request.extra_params("symbol", &ticker);
+            if function == "TIME_SERIES_DAILY" {
+                request.extra_params("outputsize", "full");
+            }
+            request.json::<Value>().await
+        },
         wait_before_retry,
     ).await.map_err(|error| {
         // Never echo provider messages or URLs: they can include the user's key.
         match error {
             error if is_quota_limit(&error) =>
                 "Alpha Vantage's request limit was still reached after 3 automatic retries. Use a saved stock or try again when your allowance resets.".into(),
+            Error::AlphaVantageInformation(_) | Error::AlphaVantageErrorMessage(_)
+                if function == "TIME_SERIES_DAILY" =>
+                "Alpha Vantage rejected the full price history request. Full daily history requires a premium Alpha Vantage key. Check your key, ticker and plan access in Data settings.".into(),
             Error::AlphaVantageInformation(_) | Error::AlphaVantageErrorMessage(_) =>
                 "Alpha Vantage rejected the request. Check your API key, ticker and plan access in Data settings.".into(),
             Error::GetRequestFailed => "Could not reach Alpha Vantage after 3 automatic retries. Check your connection and try again. Saved stocks still work.".into(),

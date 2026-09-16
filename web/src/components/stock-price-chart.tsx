@@ -22,6 +22,8 @@ const dateLabel = (value: string) =>
     timeZone: "UTC",
   });
 const config = { close: { label: "Daily close", color: "var(--chart-2)" } };
+const rangeMonths = { "1M": 1, "3M": 3, "3Y": 36, "5Y": 60, ALL: 0 };
+type PriceRange = keyof typeof rangeMonths;
 
 export function StockPriceChart({
   ticker,
@@ -37,7 +39,7 @@ export function StockPriceChart({
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [range, setRange] = useState("1M");
+  const [range, setRange] = useState<PriceRange>("1M");
   const request = useRef(0);
   const load = useCallback(
     async (refresh = false) => {
@@ -74,7 +76,7 @@ export function StockPriceChart({
   if (cutoff && range !== "ALL") {
     const day = cutoff.getUTCDate();
     cutoff.setUTCDate(1);
-    cutoff.setUTCMonth(cutoff.getUTCMonth() - (range === "1M" ? 1 : 3));
+    cutoff.setUTCMonth(cutoff.getUTCMonth() - rangeMonths[range]);
     const lastDay = new Date(
       Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0),
     ).getUTCDate();
@@ -107,7 +109,7 @@ export function StockPriceChart({
                 role="group"
                 aria-label="Price history range"
               >
-                {["1M", "3M", "ALL"].map((value) => (
+                {(Object.keys(rangeMonths) as PriceRange[]).map((value) => (
                   <Button
                     key={value}
                     size="sm"
@@ -191,7 +193,9 @@ export function StockPriceChart({
                     minTickGap={45}
                     tickMargin={12}
                     tickFormatter={(value) =>
-                      dateLabel(value).replace(/, \d{4}$/, "")
+                      range === "1M" || range === "3M"
+                        ? dateLabel(value).replace(/, \d{4}$/, "")
+                        : dateLabel(value).replace(/ \d+,/, "")
                     }
                   />
                   <YAxis
@@ -238,10 +242,19 @@ export function StockPriceChart({
                   {points.length} trading sessions
                 </span>
                 <span>
-                  Alpha Vantage · Up to 100 sessions · Unadjusted for splits and
-                  dividends
+                  Alpha Vantage ·{" "}
+                  {history?.outputSize === "full"
+                    ? "Full available history"
+                    : "Limited saved history"}{" "}
+                  · Unadjusted for splits and dividends
                 </span>
               </div>
+              {range === "ALL" && history?.outputSize === "full" && (
+                <p className="footnote mt-2">
+                  All available trading history is shown. Provider coverage may
+                  start after the company’s listing date.
+                </p>
+              )}
             </>
           ) : !busy ? (
             <div className="chart-empty price-empty">

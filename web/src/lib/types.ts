@@ -7,6 +7,7 @@ export interface PriceHistory {
   ticker: string;
   fetchedAt: string;
   points: PricePoint[];
+  outputSize?: "full";
 }
 export interface Point {
   year: number;

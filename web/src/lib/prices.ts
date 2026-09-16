@@ -12,6 +12,10 @@ function parsePrices(
 ): PricePoint[] {
   const metadata = body["Meta Data"];
   const series = body["Time Series (Daily)"];
+  if (record(metadata) && metadata["4. Output Size"] === "Compact")
+    throw new Error(
+      "Alpha Vantage returned limited prices instead of full history. Check your plan access in Data settings.",
+    );
   if (
     !record(metadata) ||
     metadata["2. Symbol"] !== ticker ||
@@ -54,20 +58,40 @@ export function loadPrices(
   const existing = active.get(ticker);
   if (existing) return existing;
   const load = async (generation: number): Promise<LoadedPrices> => {
+    let saved: PriceHistory | undefined;
     if (!refresh) {
-      const saved = await savedPrices(ticker);
-      if (saved) return { history: saved, cached: true, warning: "" };
+      saved = await savedPrices(ticker);
+      if (saved?.outputSize === "full")
+        return { history: saved, cached: true, warning: "" };
+      if (saved && !apiKey)
+        return {
+          history: saved,
+          cached: true,
+          warning:
+            "Saved prices contain only a limited history. Add a premium Alpha Vantage key in Data settings to load full history.",
+        };
     }
     if (!apiKey)
       throw new Error(
         "Add your Alpha Vantage API key in Data settings to load prices. Saved financials are still available.",
       );
-    const body = await fetchStatement(apiKey, ticker, "TIME_SERIES_DAILY");
-    const history = {
-      ticker,
-      fetchedAt: new Date().toISOString(),
-      points: parsePrices(body, ticker),
-    };
+    let history: PriceHistory;
+    try {
+      const body = await fetchStatement(apiKey, ticker, "TIME_SERIES_DAILY");
+      history = {
+        ticker,
+        fetchedAt: new Date().toISOString(),
+        points: parsePrices(body, ticker),
+        outputSize: "full",
+      };
+    } catch (error) {
+      if (!saved) throw error;
+      return {
+        history: saved,
+        cached: true,
+        warning: `Showing limited saved prices. ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
     let warning = "";
     try {
       if (!(await savePrices(history, generation)))

@@ -68,18 +68,25 @@ available to open/reload the page; this is not a service-worker offline app.
 
 The price panel shows the latest available daily close and its absolute and
 percentage change from the previous trading session. The [daily price endpoint](https://www.alphavantage.co/documentation/#daily)
-uses the default compact response, with up to 100 trading sessions and support
-for free keys. Prices are unadjusted for splits and dividends, and are not
-real-time quotes. The feed supplies no currency, so the panel labels values as
+requests `outputsize=full`, covering every daily session the provider has for
+the ticker. Full daily history requires a premium Alpha Vantage key. Provider
+coverage (documented as 25+ years) may begin after an older company’s listing;
+All does not imply prices exist before listing or before provider coverage.
+Prices are unadjusted for splits and dividends, and are not real-time quotes.
+The feed supplies no currency, so the panel labels values as
 exchange quote units instead of assuming the financial statements' currency.
 
-The 1M and 3M controls select calendar windows ending on the latest loaded
-session; All shows every loaded session. These controls and the statement
-fiscal-year controls are independent and use no additional requests. Hover or
+The 1M, 3M, 3Y and 5Y controls select calendar windows ending on the latest loaded
+session; All shows every available session without a date or row-count cap.
+These controls and the statement fiscal-year controls are independent and use
+no additional requests. Hover or
 use the chart's keyboard navigation to inspect daily closing prices.
 
-Prices load after statements and are cached independently with no automatic
-refresh. **Refresh price** updates only prices; **Refresh data** updates financial
+Prices load after statements and full-history snapshots are cached independently
+with no automatic refresh. Legacy compact snapshots are upgraded once a key is
+available; without a key or if the upgrade fails, they remain usable with a
+limited-history notice. A failed upgrade does not replace the saved snapshot.
+**Refresh price** updates only prices; **Refresh data** updates financial
 statements. A failed price download leaves statements usable, and a failed
 price refresh keeps the previous chart. **Clear saved statements** removes
 prices as well, and prevents pending price downloads from restoring them.

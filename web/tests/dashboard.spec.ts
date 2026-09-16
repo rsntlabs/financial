@@ -61,6 +61,9 @@ async function stub(page: Page, calls: string[] = []) {
     const fn = url.searchParams.get("function")!;
     calls.push(fn);
     expect(url.searchParams.get("apikey")).toBe(KEY);
+    expect(url.searchParams.get("outputsize")).toBe(
+      fn === "TIME_SERIES_DAILY" ? "full" : null,
+    );
     return route.fulfill({
       json: fixture(fn, url.searchParams.get("symbol")!),
     });
@@ -549,7 +552,14 @@ test("refreshing prices updates only prices and preserves the chart and cache on
   expect(attempts).toBe(4);
 });
 
-for (const kind of ["empty", "symbol", "number", "date"]) {
+for (const kind of [
+  "empty",
+  "symbol",
+  "number",
+  "date",
+  "compact",
+  "premium",
+]) {
   test(`unavailable or malformed ${kind} prices leave statements usable and can be retried`, async ({
     page,
   }) => {
@@ -559,6 +569,12 @@ for (const kind of ["empty", "symbol", "number", "date"]) {
         return route.fulfill({ json: fixture(fn) });
       const prices = priceFixture();
       if (kind === "empty") return route.fulfill({ json: {} });
+      if (kind === "premium")
+        return route.fulfill({
+          json: { Information: "This is a premium endpoint" },
+        });
+      if (kind === "compact")
+        Object.assign(prices["Meta Data"], { "4. Output Size": "Compact" });
       if (kind === "symbol") prices["Meta Data"]["2. Symbol"] = "OTHER";
       if (kind === "number")
         prices["Time Series (Daily)"]["2026-09-15"]["4. close"] = "None";
@@ -575,6 +591,10 @@ for (const kind of ["empty", "symbol", "number", "date"]) {
       page.getByText("Price history unavailable", { exact: true }),
     ).toBeVisible();
     await expect(page.locator(".price-value")).toHaveCount(0);
+    if (kind === "premium")
+      await expect(page.getByRole("alert")).toContainText(
+        "requires a premium Alpha Vantage key",
+      );
     await expect(page.locator(".metric-highlight .metric-value")).toHaveText(
       "500.0M",
     );
@@ -810,5 +830,145 @@ for (const scenario of ["download", "refresh", "refresh in another tab"]) {
     await page.reload();
     await search(page);
     expect(calls).toHaveLength(5);
+  });
+}
+
+function longPriceFixture(symbol = "TEST") {
+  const series: Record<string, { "4. close": string }> = {};
+  // Enough daily sessions to expose compact responses and accidental row limits.
+  for (
+    let date = new Date("1980-12-12T00:00:00Z");
+    date <= new Date("2026-09-15T00:00:00Z");
+    date.setUTCDate(date.getUTCDate() + 1)
+  ) {
+    if (date.getUTCDay() !== 0 && date.getUTCDay() !== 6)
+      series[date.toISOString().slice(0, 10)] = { "4. close": "100.00" };
+  }
+  return {
+    "Meta Data": { "2. Symbol": symbol, "4. Output Size": "Full size" },
+    "Time Series (Daily)": series,
+  };
+}
+
+test("3Y, 5Y and All retain full history, exact calendar boundaries and cached sessions", async ({
+  page,
+}) => {
+  const prices = longPriceFixture();
+  const dates = Object.keys(prices["Time Series (Daily)"]).sort();
+  let requests = 0;
+  await page.route(API, (route) => {
+    const url = new URL(route.request().url());
+    const fn = url.searchParams.get("function")!;
+    requests++;
+    expect(url.searchParams.get("outputsize")).toBe(
+      fn === "TIME_SERIES_DAILY" ? "full" : null,
+    );
+    return route.fulfill({
+      json: fn === "TIME_SERIES_DAILY" ? prices : fixture(fn),
+    });
+  });
+  await page.goto("./");
+  await setup(page);
+  await search(page);
+  const panel = page.getByRole("region", { name: "TEST stock price" });
+  for (const [range, start] of [
+    ["3Y", "2023-09-15"],
+    ["5Y", "2021-09-15"],
+    ["All", "1980-12-12"],
+  ]) {
+    await panel.getByRole("button", { name: range, exact: true }).click();
+    await expect(panel.getByRole("img")).toHaveAttribute(
+      "aria-label",
+      `TEST daily closing price, ${start} to 2026-09-15, ${dates.filter((date) => date >= start).length} trading sessions`,
+    );
+    await expect(
+      panel.getByRole("button", { name: range, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByRole("img")).toContainText(/20[0-9]{2}/);
+  }
+  expect(requests).toBe(5);
+  await page.reload();
+  await search(page);
+  await panel.getByRole("button", { name: "All", exact: true }).click();
+  await expect(panel.getByRole("img")).toHaveAttribute(
+    "aria-label",
+    `TEST daily closing price, 1980-12-12 to 2026-09-15, ${dates.length} trading sessions`,
+  );
+  expect(requests).toBe(5);
+});
+
+for (const outcome of ["success", "no key", "rejected"]) {
+  test(`legacy compact price cache upgrades safely: ${outcome}`, async ({
+    page,
+  }) => {
+    await stub(page);
+    await page.goto("./");
+    await setup(page);
+    await search(page);
+    await page.evaluate(async (noKey) => {
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open("financials-alphavantage-v1");
+        request.onsuccess = () => resolve(request.result);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("prices", "readwrite");
+        const store = tx.objectStore("prices");
+        const request = store.get("TEST");
+        request.onsuccess = () => {
+          const history = request.result;
+          delete history.outputSize;
+          store.put(history);
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+      if (noKey) sessionStorage.clear();
+    }, outcome === "no key");
+    await page.unroute(API);
+    let requests = 0;
+    await page.route(API, (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get("function")).toBe("TIME_SERIES_DAILY");
+      expect(url.searchParams.get("outputsize")).toBe("full");
+      requests++;
+      return route.fulfill({
+        json:
+          outcome === "rejected"
+            ? { Information: "This is a premium endpoint" }
+            : longPriceFixture(),
+      });
+    });
+    await page.reload();
+    if (outcome === "no key")
+      await page.getByRole("button", { name: "Close settings" }).click();
+    await search(page);
+    const panel = page.getByRole("region", { name: "TEST stock price" });
+    await panel.getByRole("button", { name: "All", exact: true }).click();
+    await expect(panel.getByRole("img")).toHaveAttribute(
+      "aria-label",
+      outcome === "success"
+        ? /1980-12-12 to 2026-09-15/
+        : /2026-05-15 to 2026-09-15, 6 trading sessions/,
+    );
+    if (outcome !== "success")
+      await expect(panel.getByRole("status")).toContainText(/limited/i);
+    expect(requests).toBe(outcome === "no key" ? 0 : 1);
+    const outputSize = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open("financials-alphavantage-v1");
+        request.onsuccess = () => resolve(request.result);
+      });
+      const value = await new Promise<string | undefined>((resolve) => {
+        const request = db
+          .transaction("prices")
+          .objectStore("prices")
+          .get("TEST");
+        request.onsuccess = () => resolve(request.result.outputSize);
+      });
+      db.close();
+      return value;
+    });
+    expect(outputSize).toBe(outcome === "success" ? "full" : undefined);
   });
 }
