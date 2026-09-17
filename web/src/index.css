@@ -739,24 +739,19 @@
   font-size: 10px;
   gap: 15px;
 }
-.error-message {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 15px 18px;
+.landing-alert {
   margin: 18px auto;
-  border: 1px solid color-mix(in oklab, var(--destructive) 50%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--destructive) 10%, var(--background));
-  color: var(--destructive);
-  font-size: 13px;
   max-width: 900px;
 }
-.error-message svg {
-  flex-shrink: 0;
+.dashboard-alert {
+  margin: 18px 0;
 }
-.error-message button {
-  margin-left: auto;
+.dashboard-alert-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 .loading-state {
   padding-top: 70px;
@@ -827,10 +822,7 @@
 }
 .price-notice {
   font-size: 12px;
-  padding: 12px;
   margin-bottom: 12px;
-  background: var(--muted);
-  border-radius: 6px;
 }
 .price-empty {
   height: 160px;
@@ -1118,7 +1110,6 @@
 .cache-status {
   font-size: 13px;
   line-height: 1.6;
-  color: var(--muted-foreground);
 }
 .cache-status {
   margin-bottom: 16px;

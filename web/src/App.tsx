@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -478,10 +479,10 @@ export default function App() {
                 Enter a ticker, or open a saved stock in Data settings.
               </p>
               {error && (
-                <div role="alert" className="error-message">
-                  <CircleAlert size={18} />
-                  <span>{error}</span>
-                </div>
+                <Alert variant="destructive" className="landing-alert">
+                  <CircleAlert />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
               <div className="ticker-examples">
                 <span>Try a company</span>
@@ -583,13 +584,15 @@ export default function App() {
                 </Button>
               </div>
             </div>
-            <div className="cache-status" role="status">
-              {cached
-                ? "Loaded from this browser’s saved statements. No API requests used for statements."
-                : "Loaded from financial data providers."}{" "}
-              Saved data stays unchanged until you refresh it.
-              {storageWarning && <p>{storageWarning}</p>}
-            </div>
+            <Alert role="status" className="cache-status">
+              <AlertDescription>
+                {cached
+                  ? "Loaded from this browser’s saved statements. No API requests used for statements."
+                  : "Loaded from financial data providers."}{" "}
+                Saved data stays unchanged until you refresh it.
+                {storageWarning && <p>{storageWarning}</p>}
+              </AlertDescription>
+            </Alert>
             <div className="dashboard-toolbar">
               <div className="toolbar-note">
                 <span className="status-dot" />
@@ -630,13 +633,18 @@ export default function App() {
               </form>
             </div>
             {error && (
-              <div role="alert" className="error-message">
-                <CircleAlert size={18} />
-                <span>{error}</span>
-                <button onClick={() => setError("")} aria-label="Dismiss error">
-                  <X size={16} />
-                </button>
-              </div>
+              <Alert variant="destructive" className="dashboard-alert">
+                <CircleAlert />
+                <AlertDescription className="dashboard-alert-body">
+                  <span>{error}</span>
+                  <button
+                    onClick={() => setError("")}
+                    aria-label="Dismiss error"
+                  >
+                    <X size={16} />
+                  </button>
+                </AlertDescription>
+              </Alert>
             )}
             {busy && (
               <p className="refreshing" role="status">

@@ -5,6 +5,8 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
 import { Skeleton } from "./ui/skeleton";
+import { Alert, AlertDescription } from "./ui/alert";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { loadPrices } from "@/lib/prices";
 import type { PriceHistory } from "@/lib/types";
 
@@ -154,15 +156,17 @@ export function StockPriceChart({
         </CardHeader>
         <CardContent>
           {error && (
-            <p role="alert" className="price-notice">
-              {history && "Showing previous prices. "}
-              {error}
-            </p>
+            <Alert variant="destructive" className="price-notice">
+              <AlertDescription>
+                {history && "Showing previous prices. "}
+                {error}
+              </AlertDescription>
+            </Alert>
           )}
           {warning && (
-            <p role="status" className="price-notice">
-              {warning}
-            </p>
+            <Alert role="status" className="price-notice">
+              <AlertDescription>{warning}</AlertDescription>
+            </Alert>
           )}
           {busy && !history ? (
             <div role="status" aria-label="Loading stock prices">

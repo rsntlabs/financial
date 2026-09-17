@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
+import { Alert, AlertDescription } from "./ui/alert";
 import {
   clearStocks,
   protectStorage,
@@ -151,14 +152,14 @@ export function DataSettings({
           </div>
         </form>
         {message && (
-          <p role="status" className="settings-message">
-            {message}
-          </p>
+          <Alert role="status" className="settings-message">
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
         )}
         {error && (
-          <p role="alert" className="error-message">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
         <div className="saved-stocks">
           <h3>Saved on this device</h3>
