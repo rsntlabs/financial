@@ -71,3 +71,34 @@ test("backend errors are surfaced without exposing malformed responses", async (
   await search(page);
   await expect(page.getByRole("alert")).toContainText("Providers unavailable.");
 });
+
+test("a request can recover after a transient provider failure", async ({
+  page,
+}) => {
+  let financialAttempts = 0;
+  await page.route("**/api/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/financials" && financialAttempts++ === 0) {
+      return route.fulfill({
+        status: 502,
+        json: { error: "Providers temporarily unavailable." },
+      });
+    }
+    return route.fulfill({
+      json:
+        url.pathname === "/api/financials" ? fixture() : priceFixture("TEST"),
+    });
+  });
+
+  await search(page);
+  await expect(page.getByRole("alert")).toContainText(
+    "Providers temporarily unavailable.",
+  );
+  await page.getByRole("button", { name: "Explore financials" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Test Industries", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".price-value")).toHaveText("126.00");
+  expect(financialAttempts).toBe(2);
+});
