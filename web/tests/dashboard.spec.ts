@@ -193,9 +193,12 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await page.goto("./");
   await search(page);
   await page.unroute("**/api/*");
-  await page.route("**/api/*", (r) =>
-    r.fulfill({ status: HTTP.NOT_FOUND, json: {} }),
-  );
+  await page.route("**/api/*", (r) => {
+    const error = r.request().url().endsWith("/api/prices")
+      ? "Daily prices unavailable."
+      : "Financial data unavailable.";
+    return r.fulfill({ status: HTTP.NOT_FOUND, json: { error } });
+  });
   await page
     .getByRole("button", { name: "Refresh price", exact: true })
     .click();
@@ -203,7 +206,7 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await expect(page.locator(".price-value")).toHaveText("126.00");
   await page.getByRole("button", { name: "Refresh data", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText(
-    "provider service could not complete the request",
+    "Financial data unavailable.",
   );
   await page.reload();
   await search(page);
