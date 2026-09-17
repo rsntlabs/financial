@@ -106,24 +106,31 @@ export function StockPriceChart({
               </p>
             </div>
             <div className="price-actions">
-              <div
-                className="price-ranges"
+              {/* type="multiple" is deliberate: Radix's type="single" swaps in
+                  radiogroup/radio semantics and drops aria-pressed, which the
+                  Playwright suite asserts on via getByRole("button", ...). A
+                  single-element value array keeps this a single-select. */}
+              <ToggleGroup
+                type="multiple"
                 role="group"
+                value={[range]}
+                onValueChange={(values) => {
+                  const next = values.find((v) => v !== range);
+
+                  if (next) {
+                    setRange(next as PriceRange);
+                  }
+                }}
+                disabled={!history}
+                className="price-ranges"
                 aria-label="Price history range"
               >
                 {(Object.keys(rangeMonths) as PriceRange[]).map((value) => (
-                  <Button
-                    key={value}
-                    size="sm"
-                    variant={range === value ? "secondary" : "ghost"}
-                    aria-pressed={range === value}
-                    disabled={!history}
-                    onClick={() => setRange(value)}
-                  >
+                  <ToggleGroupItem key={value} value={value} size="sm">
                     {value === "ALL" ? "All" : value}
-                  </Button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
               <Button
                 size="sm"
                 variant="outline"
