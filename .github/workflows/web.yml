@@ -114,12 +114,11 @@ jobs:
 
   deploy-worker:
     # Requires repository secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-    # and SEC_USER_AGENT (see worker/README). Skips cleanly until they exist,
-    # so forks and PRs never fail on missing credentials.
-    if: |
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      github.event_name != 'pull_request' &&
-      secrets.CLOUDFLARE_API_TOKEN != ''
+    # and SEC_USER_AGENT (see worker/README). The `secrets` context is not
+    # readable in a job-level `if:` (GitHub rejects the whole workflow file
+    # if it is referenced there), so each step below checks it individually
+    # and no-ops until the secrets exist, instead of failing the job.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
     needs: worker
     concurrency:
       group: "worker-deploy-${{ github.ref }}"
@@ -130,13 +129,17 @@ jobs:
         working-directory: worker
     steps:
       - uses: actions/checkout@v4
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
       - uses: actions/setup-node@v4
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
       - name: Deploy Cloudflare Worker
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
