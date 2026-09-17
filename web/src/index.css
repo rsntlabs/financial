@@ -474,9 +474,22 @@
   font-weight: 600;
   letter-spacing: 1.4px;
 }
+.metric-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.metric-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  color: var(--muted-foreground);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--metric-cols, 4), minmax(0, 1fr));
   gap: 12px;
 }
 .metric-card {
@@ -486,6 +499,10 @@
   border-radius: 9px;
   background: var(--card);
   box-shadow: none;
+}
+.metric-trend {
+  height: 28px;
+  margin-top: 10px;
 }
 .metric-highlight {
   border-color: var(--border);

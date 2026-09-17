@@ -1,10 +1,13 @@
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Line,
   LineChart,
   ReferenceLine,
+  ResponsiveContainer,
   XAxis,
   YAxis,
 } from "recharts";
@@ -191,6 +194,52 @@ export function FinancialChart({
         </div>
       </CardContent>
     </Card>
+  );
+}
+export type SparklineTone = "muted" | "accent";
+
+export function hasTrend(points: Point[], dataKey: PointKey) {
+  return points.some((p) => p[dataKey] !== null);
+}
+
+// A trend-at-a-glance for a single metric card. Purely decorative: the
+// number and detail line already state the value, so this stays aria-hidden.
+export function Sparkline({
+  points,
+  dataKey,
+  tone = "muted",
+}: {
+  points: Point[];
+  dataKey: PointKey;
+  tone?: SparklineTone;
+}) {
+  if (!hasTrend(points, dataKey)) {
+    return null;
+  }
+
+  const color = tone === "accent" ? "var(--chart-1)" : "var(--muted-foreground)";
+  const gradientId = `sparkline-${dataKey}`;
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={points} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area
+          type="linear"
+          dataKey={dataKey}
+          stroke={color}
+          strokeWidth={1.5}
+          fill={`url(#${gradientId})`}
+          connectNulls={false}
+          isAnimationActive={false}
+          dot={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 export function RevenueStreams({
