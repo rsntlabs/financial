@@ -1,54 +1,71 @@
-import { expect, test } from "@playwright/test";
-import { fixture, KEY, priceFixture } from "./upstream";
+import { expect, test, type Page } from "@playwright/test";
+import {
+  CHART,
+  fixture,
+  fulfillChart,
+  HTTP,
+  KEY,
+  plumbing,
+  routeStatements,
+  STATEMENTS,
+  timeseries,
+} from "./upstream";
 
-async function search(page: import("@playwright/test").Page) {
+async function search(page: Page) {
   await page.goto("./");
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
   await page.getByRole("button", { name: "Explore financials" }).click();
 }
 
-test("static page posts financial and price requests to the backend API", async ({
+test("static page routes financial and price requests through the Cloudflare Worker proxy", async ({
   page,
 }) => {
-  const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
-  await page.route("**/api/*", (route) => {
-    const url = new URL(route.request().url());
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    requests.push({ path: url.pathname, body });
-    return route.fulfill({
-      json:
-        url.pathname === "/api/financials"
-          ? fixture()
-          : priceFixture(body.ticker as string),
-    });
+  const requests: string[] = [];
+  await plumbing(page);
+  await routeStatements(page, (route) => {
+    requests.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: timeseries() });
+  });
+  await page.route(CHART, (route) => {
+    requests.push(new URL(route.request().url()).pathname);
+    return fulfillChart(route);
   });
   await search(page);
   await expect(
     page.getByRole("heading", { name: "Test Industries", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".price-value")).toHaveText("126.00");
-  expect(requests.map(({ path }) => path)).toEqual([
-    "/api/financials",
-    "/api/prices",
+  expect(requests).toEqual([
+    expect.stringContaining("/yahoo/timeseries/TEST"),
+    expect.stringContaining("/yahoo/chart/TEST"),
   ]);
-  expect(requests[0].body).toEqual({
-    ticker: "TEST",
-    apiKey: "",
-    years: 10,
-  });
 });
 
-test("API keys are sent only in backend request bodies", async ({ page }) => {
-  const bodies: Record<string, unknown>[] = [];
-  await page.route("**/api/*", (route) => {
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    bodies.push(body);
-    return route.fulfill({
-      json: route.request().url().endsWith("/financials")
-        ? fixture()
-        : priceFixture(),
-    });
+test("API keys are sent only to Alpha Vantage, never to the Yahoo or SEC proxy", async ({
+  page,
+}) => {
+  await plumbing(page);
+  // Omit annual net income so Alpha Vantage is queried to try filling the gap.
+  const data = fixture();
+  delete data.metrics.annualNetIncome;
+  await routeStatements(page, (route) =>
+    route.fulfill({ json: timeseries(data) }),
+  );
+  await page.route(CHART, (route) => fulfillChart(route));
+
+  let alphaRequest: string | undefined;
+  await page.route("https://www.alphavantage.co/**", (route) => {
+    alphaRequest = route.request().url();
+    return route.fulfill({ json: {} });
   });
+  const proxyRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("/yahoo/") || url.includes("/sec/")) {
+      proxyRequests.push(url);
+    }
+  });
+
   await page.goto("./");
   await page.getByRole("button", { name: "Data settings" }).click();
   await page.getByLabel("Alpha Vantage API key", { exact: true }).fill(KEY);
@@ -56,43 +73,48 @@ test("API keys are sent only in backend request bodies", async ({ page }) => {
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
   await page.getByRole("button", { name: "Explore financials" }).click();
-  await expect(page.locator(".price-value")).toHaveText("126.00");
-  expect(bodies).toHaveLength(2);
-  expect(bodies.every(({ apiKey }) => apiKey === KEY)).toBe(true);
-  expect(JSON.stringify(bodies)).toContain(KEY);
+  await expect(
+    page.getByRole("heading", { name: "Test Industries", exact: true }),
+  ).toBeVisible();
+
+  expect(alphaRequest).toContain(KEY);
+  expect(proxyRequests.length).toBeGreaterThan(0);
+  expect(proxyRequests.some((url) => url.includes(KEY))).toBe(false);
 });
 
-test("backend errors are surfaced without exposing malformed responses", async ({
+test("provider failures are surfaced without exposing malformed upstream responses", async ({
   page,
 }) => {
-  await page.route("**/api/financials", (route) =>
-    route.fulfill({ status: 502, json: { error: "Providers unavailable." } }),
+  await plumbing(page);
+  // A status outside yfinance-rs's retry list (408/429/500/502/503/504) keeps
+  // this test from waiting through the client's exponential backoff retries.
+  await page.route(STATEMENTS, (route) =>
+    route.fulfill({ status: HTTP.NOT_FOUND, body: "" }),
   );
+  await page.route(CHART, (route) => fulfillChart(route));
   await search(page);
-  await expect(page.getByRole("alert")).toContainText("Providers unavailable.");
+  await expect(page.getByRole("alert")).toContainText(
+    "No annual revenue available",
+  );
 });
 
 test("a request can recover after a transient provider failure", async ({
   page,
 }) => {
-  let financialAttempts = 0;
-  await page.route("**/api/*", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/financials" && financialAttempts++ === 0) {
-      return route.fulfill({
-        status: 502,
-        json: { error: "Providers temporarily unavailable." },
-      });
+  let attempts = 0;
+  await plumbing(page);
+  await routeStatements(page, (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      return route.fulfill({ status: HTTP.SERVICE_UNAVAILABLE, body: "" });
     }
-    return route.fulfill({
-      json:
-        url.pathname === "/api/financials" ? fixture() : priceFixture("TEST"),
-    });
+    return route.fulfill({ json: timeseries() });
   });
+  await page.route(CHART, (route) => fulfillChart(route));
 
   await search(page);
   await expect(page.getByRole("alert")).toContainText(
-    "Providers temporarily unavailable.",
+    "No annual revenue available",
   );
   await page.getByRole("button", { name: "Explore financials" }).click();
 
@@ -100,5 +122,5 @@ test("a request can recover after a transient provider failure", async ({
     page.getByRole("heading", { name: "Test Industries", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".price-value")).toHaveText("126.00");
-  expect(financialAttempts).toBe(2);
+  expect(attempts).toBe(2);
 });

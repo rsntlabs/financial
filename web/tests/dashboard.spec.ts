@@ -7,6 +7,8 @@ import {
   fixture,
   priceFixture,
   fulfillChart,
+  timeseries,
+  routeStatements,
   stub,
 } from "./upstream";
 async function setup(page: Page, remember = false) {
@@ -30,7 +32,7 @@ async function search(page: Page, symbol = "TEST") {
     page.getByRole("button", { name: "Refresh price", exact: true }),
   ).toBeEnabled({ timeout: 15000 });
 }
-test("keyless provider API and WASM analysis render annual figures, statement views, CSV and neutral layout", async ({
+test("keyless WASM provider chain and analysis render annual figures, statement views, CSV and neutral layout", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -155,7 +157,7 @@ test("cache survives reload and another tab, and period changes make no requests
 test("optional keys go only to Alpha Vantage, are not cached with data, and can be forgotten", async ({
   page,
 }) => {
-  await stub(page, [], KEY);
+  await stub(page);
   await page.goto("./");
   await setup(page, true);
   await search(page);
@@ -192,13 +194,10 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await stub(page);
   await page.goto("./");
   await search(page);
-  await page.unroute("**/api/*");
-  await page.route("**/api/*", (r) => {
-    const error = r.request().url().endsWith("/api/prices")
-      ? "Daily prices unavailable."
-      : "Financial data unavailable.";
-    return r.fulfill({ status: HTTP.NOT_FOUND, json: { error } });
-  });
+  await page.unroute(STATEMENTS);
+  await page.unroute(CHART);
+  await page.route(STATEMENTS, (r) => r.fulfill({ status: HTTP.NOT_FOUND, body: "" }));
+  await page.route(CHART, (r) => r.fulfill({ status: HTTP.NOT_FOUND, body: "" }));
   await page
     .getByRole("button", { name: "Refresh price", exact: true })
     .click();
@@ -206,7 +205,7 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await expect(page.locator(".price-value")).toHaveText("126.00");
   await page.getByRole("button", { name: "Refresh data", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText(
-    "Financial data unavailable.",
+    "No annual revenue available",
   );
   await page.reload();
   await search(page);
@@ -275,16 +274,7 @@ test("missing data is a gap, empty upstream responses are not saved", async ({
   page,
 }) => {
   await stub(page);
-  await page.route(STATEMENTS, (r) =>
-    r.fulfill({
-      json: {
-        schemaVersion: 1,
-        metrics: {},
-        sources: {},
-        fetchedAt: "2026-09-16T00:00:00Z",
-      },
-    }),
-  );
+  await routeStatements(page, (r) => r.fulfill({ json: timeseries({ metrics: {} }) }));
   await page.goto("./");
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
   await page.getByRole("button", { name: "Explore financials" }).click();
@@ -294,7 +284,7 @@ test("missing data is a gap, empty upstream responses are not saved", async ({
   await page.unroute(STATEMENTS);
   const data = fixture();
   delete data.metrics.annualNetIncome;
-  await page.route(STATEMENTS, (r) => r.fulfill({ json: data }));
+  await routeStatements(page, (r) => r.fulfill({ json: timeseries(data) }));
   await search(page);
   await page.locator("summary").click();
   await expect(page.getByText(/FY 2025: net income unavailable/)).toBeVisible();
@@ -309,7 +299,7 @@ test("prices load separately and stale ticker responses cannot replace the curre
   const gate = new Promise<void>((r) => (release = r));
   const pending = new Promise<void>((r) => (started = r));
   await page.route(CHART, async (r) => {
-    const ticker = r.request().postDataJSON().ticker as string;
+    const ticker = new URL(r.request().url()).pathname.split("/").pop();
     if (ticker === "TEST") {
       started();
       await gate;
