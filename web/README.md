@@ -4,6 +4,10 @@ React calls Rust WASM for both acquisition and analysis. Acquisition runs in a
 dedicated Web Worker; `yfinance-rs` and `edgar-rs` use reqwest's Fetch transport
 there. The provider chain tries Yahoo, SEC EDGAR, then optional Alpha Vantage.
 No `/api` service is needed, and the worker does not bypass browser CORS rules.
+Adding `Access-Control-Allow-Origin: *` to the dashboard's own responses would
+not alter Yahoo's response headers. If Yahoo disallows the deployed origin, use
+a controlled server-side proxy rather than expecting a worker or static-host
+CORS setting to override the upstream policy.
 See the [root README](../README.md) for startup and static hosting.
 
 ## Data and keys
