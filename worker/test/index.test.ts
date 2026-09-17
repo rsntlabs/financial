@@ -89,6 +89,27 @@ describe("Yahoo routes", () => {
     expect((chartInit.headers as Record<string, string>).cookie).toBe("A=1");
   });
 
+  it("strips content-encoding and content-length, since fetch() already decoded the body", async () => {
+    const fetchMock = stubYahooSession((url) =>
+      url.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/AAPL")
+        ? jsonResponse(
+            { chart: {} },
+            { headers: { "content-encoding": "gzip", "content-length": "9999" } },
+          )
+        : undefined,
+    );
+    const worker = await startWorker(fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL"),
+      ENV,
+    );
+
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(response.headers.get("content-length")).toBeNull();
+    expect(await response.json()).toEqual({ chart: {} });
+  });
+
   it("retries once with a fresh session after an auth failure", async () => {
     let crumbCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

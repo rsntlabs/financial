@@ -61,3 +61,12 @@ custom route) so the dashboard build points at it. It is a public URL, not a
 key, so a plain variable is correct. Until it is set, CI builds the dashboard
 against a placeholder that never resolves, so a missing configuration fails
 obviously instead of pointing at the wrong host.
+
+The deployed Worker is unauthenticated and has no aggregate rate limit of its
+own (only a per-request timeout); it accepts requests from any origin because
+that is what lets a static dashboard use it at all. Anyone who finds the
+`*.workers.dev` URL can drive traffic through it, consuming your Cloudflare
+quota and the `SEC_USER_AGENT` contact identity's standing with Yahoo/SEC.
+Put rate limiting or authentication in front of it (a Cloudflare Rate Limiting
+rule or Access policy) before treating this as more than a low-traffic,
+personal deployment.

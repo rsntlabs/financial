@@ -217,9 +217,15 @@ const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 // Upstream cookies must never reach the browser, and a proxied response must
 // not be cached anywhere in between; every other upstream header passes through.
+// fetch() already transparently decompressed the body if Yahoo/SEC sent one
+// gzip/br-encoded, but content-encoding and content-length still describe the
+// original compressed bytes; forwarding them unchanged would tell the browser
+// to decompress an already-decompressed body.
 function withCors(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.delete("set-cookie");
+  headers.delete("content-encoding");
+  headers.delete("content-length");
   for (const [name, value] of Object.entries(CORS_HEADERS)) {
     headers.set(name, value);
   }
@@ -251,6 +257,7 @@ export default {
     if (request.method === "OPTIONS") {
       return withCors(new Response(null, { status: HttpStatus.Ok }));
     }
+
     if (request.method !== "GET") {
       return withCors(jsonError(HttpStatus.BadRequest, "Only GET requests are supported."));
     }
