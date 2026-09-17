@@ -1,4 +1,8 @@
 export type Nullable = number | null;
+export interface TickerEntry {
+  ticker: string;
+  name: string;
+}
 export interface PricePoint {
   date: string;
   close: number;

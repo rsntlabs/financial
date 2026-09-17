@@ -1,6 +1,7 @@
 import { analyze } from "./engine";
-import { savedStock, saveStock } from "./storage";
-import { providerRequest } from "./service";
+import { savedStock, saveStock, savedTickers, saveTickers } from "./storage";
+import { fetchTickers, providerRequest } from "./service";
+import type { TickerEntry } from "./types";
 // Legacy cached Alpha payloads remain readable by the analysis engine.
 export interface FinancialPayload {
   income?: Record<string, unknown>;
@@ -55,4 +56,24 @@ export function loadStock(
       : await load())().finally(() => active.delete(id));
   active.set(id, promise);
   return promise;
+}
+let tickersRequest: Promise<TickerEntry[]> | null = null;
+export function loadTickers(): Promise<TickerEntry[]> {
+  tickersRequest ??= (async () => {
+    const saved = await savedTickers();
+    if (saved) {
+      return saved;
+    }
+    const list = await fetchTickers();
+    try {
+      await saveTickers(list);
+    } catch {
+      // A saved cache only speeds up the next page load; a fetched list still works this session.
+    }
+    return list;
+  })().catch((e) => {
+    tickersRequest = null;
+    throw e;
+  });
+  return tickersRequest;
 }

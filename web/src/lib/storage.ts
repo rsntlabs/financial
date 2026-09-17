@@ -1,5 +1,5 @@
 import type { FinancialPayload } from "./provider";
-import type { PriceHistory } from "./types";
+import type { PriceHistory, TickerEntry } from "./types";
 export interface SavedStock {
   ticker: string;
   fetchedAt: string;
@@ -94,6 +94,26 @@ export async function savePrices(record: PriceHistory, generation: number) {
     };
   });
 }
+const TICKERS_TTL_MS = 24 * 60 * 60 * 1000;
+interface TickerCache {
+  list: TickerEntry[];
+  fetchedAt: number;
+}
+export async function savedTickers(): Promise<TickerEntry[] | undefined> {
+  const cache = await operation<TickerCache | undefined>(
+    "metadata",
+    "readonly",
+    (s) => s.get("tickers"),
+  );
+  if (!cache || Date.now() - cache.fetchedAt > TICKERS_TTL_MS) {
+    return undefined;
+  }
+  return cache.list;
+}
+export const saveTickers = (list: TickerEntry[]) =>
+  operation("metadata", "readwrite", (s) =>
+    s.put({ list, fetchedAt: Date.now() } satisfies TickerCache, "tickers"),
+  );
 export const pendingStock = (ticker: string) =>
   operation<SavedStock | undefined>("pending", "readonly", (s) =>
     s.get(ticker),

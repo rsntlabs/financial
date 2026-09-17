@@ -241,6 +241,43 @@
   color: var(--muted-foreground);
   pointer-events: none;
 }
+.ticker-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 35px #00000022;
+  z-index: 20;
+}
+.ticker-suggestions li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ticker-suggestions li:hover,
+.ticker-suggestions li.active {
+  background: var(--accent);
+}
+.suggestion-ticker {
+  font-weight: 650;
+  font-size: 13px;
+}
+.suggestion-name {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ticker-form button {
   flex-shrink: 0;
   font-weight: 650;

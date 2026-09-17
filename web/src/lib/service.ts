@@ -1,4 +1,5 @@
 import type { BrowserProviders } from "../wasm/financial_core";
+import type { TickerEntry } from "./types";
 import { loadEngine, loadOnce } from "./wasm";
 
 const YEARS_REQUESTED = 10;
@@ -18,21 +19,25 @@ const getProviders = loadOnce<BrowserProviders>(async () => {
   return new engine.BrowserProviders(proxyBase());
 });
 
+// proxyBase() reports its own misconfiguration error before the engine is loaded.
+async function loadProviders(): Promise<BrowserProviders> {
+  proxyBase();
+  try {
+    return await getProviders();
+  } catch {
+    throw new Error(
+      "The provider engine could not load. Refresh the page and try again.",
+    );
+  }
+}
+
 export async function providerRequest<T>(
   endpoint: "financials" | "prices",
   ticker: string,
   apiKey: string,
   endYear?: number,
 ): Promise<T> {
-  proxyBase();
-  let providers: BrowserProviders;
-  try {
-    providers = await getProviders();
-  } catch {
-    throw new Error(
-      "The provider engine could not load. Refresh the page and try again.",
-    );
-  }
+  const providers = await loadProviders();
   try {
     const json =
       endpoint === "financials"
@@ -41,6 +46,15 @@ export async function providerRequest<T>(
     return JSON.parse(json) as T;
   } catch (error) {
     // Rust rejects these promises with a plain string, not an Error object.
+    throw new Error(String(error));
+  }
+}
+
+export async function fetchTickers(): Promise<TickerEntry[]> {
+  const providers = await loadProviders();
+  try {
+    return JSON.parse(await providers.tickers()) as TickerEntry[];
+  } catch (error) {
     throw new Error(String(error));
   }
 }

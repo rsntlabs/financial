@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -30,11 +37,24 @@ import {
 import { FinancialChart, RevenueStreams } from "@/components/financial-chart";
 import { StockPriceChart } from "@/components/stock-price-chart";
 import { analyze } from "@/lib/engine";
-import { loadStock } from "@/lib/provider";
+import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
 import { DataSettings } from "@/components/data-settings";
 import { downloadStatements, number, percent } from "@/lib/format";
-import type { Nullable, Report, Section } from "@/lib/types";
+import type { Nullable, Report, Section, TickerEntry } from "@/lib/types";
+
+const SUGGESTION_LIMIT = 8;
+
+function matchingTickers(value: string, tickers: TickerEntry[]): TickerEntry[] {
+  const query = value.trim();
+  if (!query) {
+    return [];
+  }
+  return tickers
+    .filter((t) => t.ticker.startsWith(query))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+    .slice(0, SUGGESTION_LIMIT);
+}
 
 function Brand({ onClick }: { onClick: () => void }) {
   return (
@@ -52,32 +72,88 @@ function TickerForm({
   value,
   onChange,
   onSubmit,
+  onSelect,
+  tickers,
   busy,
   compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (e: FormEvent) => void;
+  onSelect: (ticker: string) => void;
+  tickers: TickerEntry[];
   busy: boolean;
   compact?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const inputId = compact ? "header-ticker" : "landing-ticker";
+  const listId = `${inputId}-suggestions`;
+  const matches = useMemo(
+    () => matchingTickers(value, tickers),
+    [value, tickers],
+  );
+  const visible = open && matches.length > 0;
+
+  function select(ticker: string) {
+    onChange(ticker);
+    onSelect(ticker);
+    setOpen(false);
+    setActive(-1);
+  }
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (!visible) {
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % matches.length);
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i <= 0 ? matches.length - 1 : i - 1));
+      return;
+    }
+
+    if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      select(matches[active].ticker);
+      return;
+    }
+
+    if (e.key === "Escape") {
+      setOpen(false);
+      setActive(-1);
+    }
+  }
   return (
     <form
       onSubmit={onSubmit}
       className={compact ? "ticker-form compact" : "ticker-form"}
       aria-label="Find company financials"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
     >
-      <label
-        className="sr-only"
-        htmlFor={compact ? "header-ticker" : "landing-ticker"}
-      >
+      <label className="sr-only" htmlFor={inputId}>
         Ticker symbol
       </label>
       <Search size={20} className="search-icon" aria-hidden="true" />
       <Input
-        id={compact ? "header-ticker" : "landing-ticker"}
+        id={inputId}
         value={value}
-        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        onChange={(e) => {
+          onChange(e.target.value.toUpperCase());
+          setOpen(true);
+          setActive(-1);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
         placeholder={
           compact ? "Search ticker" : "Enter a ticker symbol, e.g. AAPL"
         }
@@ -86,6 +162,11 @@ function TickerForm({
         spellCheck={false}
         maxLength={20}
         required
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={visible}
+        aria-controls={listId}
+        aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
         aria-describedby="ticker-hint"
       />
       <Button type="submit" disabled={busy} size={compact ? "sm" : "lg"}>
@@ -99,6 +180,24 @@ function TickerForm({
           </>
         )}
       </Button>
+      {visible && (
+        <ul className="ticker-suggestions" id={listId} role="listbox">
+          {matches.map((match, i) => (
+            <li
+              key={match.ticker}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? "active" : ""}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => select(match.ticker)}
+            >
+              <span className="suggestion-ticker">{match.ticker}</span>
+              <span className="suggestion-name">{match.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </form>
   );
 }
@@ -215,9 +314,17 @@ export default function App() {
   const [years, setYears] = useState(3);
   const [endYear, setEndYear] = useState("");
   const [tab, setTab] = useState("overview");
+  const [tickers, setTickers] = useState<TickerEntry[]>([]);
   const request = useRef<AbortController | null>(null);
   const inputRef = useRef<string>("");
   useEffect(() => () => request.current?.abort(), []);
+  useEffect(() => {
+    loadTickers()
+      .then(setTickers)
+      .catch(() => {
+        // No suggestions is a minor degradation; entering a ticker directly still works.
+      });
+  }, []);
   async function load(e: FormEvent) {
     e.preventDefault();
     await openStock(ticker);
@@ -316,6 +423,8 @@ export default function App() {
                 value={ticker}
                 onChange={setTicker}
                 onSubmit={load}
+                onSelect={(symbol) => void openStock(symbol)}
+                tickers={tickers}
                 busy={busy}
                 compact
               />
@@ -361,6 +470,8 @@ export default function App() {
                 value={ticker}
                 onChange={setTicker}
                 onSubmit={load}
+                onSelect={(symbol) => void openStock(symbol)}
+                tickers={tickers}
                 busy={busy}
               />
               <p id="ticker-hint" className="ticker-hint">

@@ -403,6 +403,39 @@ test("legacy Alpha statements open without a key while prices use the new provid
   );
 });
 
+test("typing a ticker shows a filtered dropdown with company names", async ({
+  page,
+}) => {
+  await stub(page);
+  await page.unroute("**/sec/files/company_tickers.json");
+  await page.route("**/sec/files/company_tickers.json", (route) =>
+    route.fulfill({
+      json: {
+        "0": { cik_str: 1234, ticker: "TEST", title: "Test Industries" },
+        "1": { cik_str: 5678, ticker: "TESTB", title: "Test Bancorp" },
+      },
+    }),
+  );
+  await page.goto("./");
+  const input = page.getByLabel("Ticker symbol", { exact: true });
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await input.fill("TE");
+  const listbox = page.getByRole("listbox");
+  await expect(listbox).toContainText("TEST");
+  await expect(listbox).toContainText("Test Industries");
+  await expect(listbox).toContainText("TESTB");
+  await expect(listbox).toContainText("Test Bancorp");
+  await page.keyboard.press("Escape");
+  await expect(listbox).toHaveCount(0);
+  await input.fill("TE");
+  await page.getByRole("option").first().click();
+  await expect(listbox).toHaveCount(0);
+  await expect(input).toHaveValue("TEST");
+  await expect(
+    page.getByRole("heading", { name: "Test Industries", exact: true }),
+  ).toBeVisible({ timeout: 20000 });
+});
+
 test("concurrent tabs share first downloads", async ({ page, context }) => {
   const tab = await context.newPage();
   const calls: string[] = [];
