@@ -115,11 +115,12 @@ role, but the dashboard intentionally does not route through it by default.
 `{ticker, fetchedAt, points, source, outputSize: "full"}`. Years must be 5–10.
 `GET /api/health` checks service availability without contacting providers.
 
-Set `WEB_ORIGIN` to the exact trusted dashboard origin to enable cross-origin API
-access. A wildcard policy is intentionally not the default: this service accepts
-provider requests and optional user API keys, so making it an unauthenticated
-public proxy would permit third parties to consume its network, concurrency and
-upstream quotas.
+The API returns `Access-Control-Allow-Origin: *` and accepts cross-origin `GET`
+and `POST` requests with `Content-Type`, allowing a static dashboard hosted on
+any origin to call it without per-deployment configuration. It does not allow
+credentialed CORS requests and does not use cookie authentication. Because a
+public deployment can still consume network, concurrency and upstream quotas,
+add authentication and per-user rate limits at the reverse proxy when needed.
 
 Keys are optional, validated, kept only for the request, and never included in
 URLs between browser and service. The Alpha crate sends its key to the upstream
@@ -127,8 +128,8 @@ API using that API's query convention; upstream errors are redacted. Only deploy
 behind a trusted HTTPS endpoint. Responses use `Cache-Control: no-store`, bodies
 are limited to 4 KiB, and four concurrent requests are admitted. Financial
 providers have a 75-second budget each and requests a 240-second outer budget.
-`WEB_ORIGIN` optionally permits one explicit cross-origin UI. Add authentication
-and per-user rate limits at your reverse proxy before offering a public service.
+Add authentication and per-user rate limits at your reverse proxy before
+offering a public service.
 
 ## Verification
 

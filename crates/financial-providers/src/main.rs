@@ -1,6 +1,6 @@
 use axum::{
     extract::{DefaultBodyLimit, State},
-    http::{header, HeaderValue, Method, StatusCode},
+    http::{header, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -11,7 +11,10 @@ use financial_providers::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    services::ServeDir,
+};
 
 struct App {
     yahoo: Arc<dyn Provider>,
@@ -89,14 +92,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slots: tokio::sync::Semaphore::new(4),
     });
     let mut router = api_router(app);
-    if let Ok(origin) = std::env::var("WEB_ORIGIN") {
-        router = router.layer(
-            CorsLayer::new()
-                .allow_origin(origin.parse::<HeaderValue>()?)
-                .allow_methods([Method::POST, Method::GET])
-                .allow_headers([header::CONTENT_TYPE]),
-        );
-    }
     let static_dir = std::env::var("WEB_DIST").unwrap_or_else(|_| "web/dist".into());
     router = router.fallback_service(ServeDir::new(static_dir));
     let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3001".into());
@@ -115,6 +110,14 @@ fn api_router(app: Arc<App>) -> Router {
         .route("/api/financials", post(financials))
         .route("/api/prices", post(prices))
         .layer(DefaultBodyLimit::max(4096))
+        // Static browser clients can be hosted on any origin. The API does not
+        // use cookies or other ambient browser credentials.
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::POST, Method::GET])
+                .allow_headers([header::CONTENT_TYPE]),
+        )
         .with_state(app)
 }
 
@@ -196,5 +199,30 @@ mod tests {
                     .unwrap();
             assert!(!body.contains("SECRET"));
         }
+    }
+
+    #[tokio::test]
+    async fn api_allows_static_clients_from_any_origin() {
+        let response = app()
+            .oneshot(
+                HttpRequest::options("/api/financials")
+                    .header(header::ORIGIN, "https://static.example")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+        assert_eq!(
+            response.headers()[header::ACCESS_CONTROL_ALLOW_METHODS],
+            "POST,GET"
+        );
+        assert_eq!(
+            response.headers()[header::ACCESS_CONTROL_ALLOW_HEADERS],
+            "content-type"
+        );
     }
 }
