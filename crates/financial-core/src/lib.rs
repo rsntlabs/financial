@@ -131,7 +131,7 @@ pub fn analyze(
     let revenue = data
         .get("annualTotalRevenue")
         .filter(|d| !d.is_empty())
-        .ok_or("No annual revenue data is available. Check the ticker or try another company.")?;
+        .ok_or("No annual revenue available. Check the ticker or try another company.")?;
     let mut ends = BTreeMap::new();
     for end in revenue.keys() {
         if let Some(y) = year(end) {
