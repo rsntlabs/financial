@@ -111,8 +111,8 @@ pub fn analyze(
     end_year: Option<i32>,
 ) -> Result<Report, String> {
     let ticker = normalize_ticker(ticker)?;
-    if !(5..=10).contains(&count) {
-        return Err("Choose between five and ten fiscal years.".into());
+    if !(3..=10).contains(&count) {
+        return Err("Choose between three and ten fiscal years.".into());
     }
     if end_year.is_some_and(|y| !(1900..=2200).contains(&y)) {
         return Err("Invalid ending fiscal year.".into());
@@ -341,7 +341,8 @@ mod tests {
         assert_eq!(report.points[0].revenue, None);
         assert_eq!(report.points[1].gross_margin, None);
         assert!(analyze("../../x", &data, 5, None).is_err());
-        assert!(analyze("TEST", &data, 3, None).is_err());
+        assert!(analyze("TEST", &data, 2, None).is_err());
+        assert!(analyze("TEST", &data, 3, None).is_ok());
         assert!(analyze("TEST", &json!({}), 5, None).is_err());
     }
     #[test]

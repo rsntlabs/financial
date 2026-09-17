@@ -5,8 +5,9 @@ browser calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directl
 a small Cloudflare Worker proxies the Yahoo and SEC requests, since neither
 grants CORS to arbitrary origins. Statements and daily prices stay in
 IndexedDB, with sources preserved per metric and date. Charts and tables cover
-5 or 10 fiscal years, cash generation, margins and daily prices, with CSV
-export.
+3, 5 or 10 fiscal years (3 by default, since Yahoo's free statement data
+reliably covers only about 3 years), cash generation, margins and daily
+prices, with CSV export.
 
 ## Run locally
 

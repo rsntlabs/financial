@@ -48,7 +48,7 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   );
   await expect(
     page.getByRole("img", {
-      name: "Revenue, fiscal years 2021 to 2025",
+      name: "Revenue, fiscal years 2023 to 2025",
       exact: true,
     }),
   ).toBeVisible();
@@ -66,7 +66,7 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   ).toBeVisible();
   await page.getByRole("tab", { name: "% Change YoY", exact: true }).click();
   await expect(
-    page.getByRole("cell", { name: "100.0%", exact: true }).first(),
+    page.getByRole("cell", { name: "33.3%", exact: true }).first(),
   ).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();

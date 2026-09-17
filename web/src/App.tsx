@@ -212,7 +212,7 @@ export default function App() {
   const [payload, setPayload] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [years, setYears] = useState(5);
+  const [years, setYears] = useState(3);
   const [endYear, setEndYear] = useState("");
   const [tab, setTab] = useState("overview");
   const request = useRef<AbortController | null>(null);
@@ -388,7 +388,7 @@ export default function App() {
                   <p>
                     Revenue, earnings, and margins
                     <br />
-                    over five or more fiscal years.
+                    over three or more fiscal years.
                   </p>
                 </div>
                 <div>
@@ -494,6 +494,7 @@ export default function App() {
                   value={years}
                   onChange={(e) => setYears(Number(e.target.value))}
                 >
+                  <option value={3}>3 years</option>
                   <option value={5}>5 years</option>
                   <option value={10}>10 years</option>
                 </select>

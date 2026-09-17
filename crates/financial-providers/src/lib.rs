@@ -22,8 +22,8 @@ pub struct Request {
 }
 impl Request {
     pub fn new(ticker: &str, years: u32, end_year: Option<i32>) -> Result<Self, String> {
-        if !(5..=10).contains(&years) || end_year.is_some_and(|y| !(1900..=2200).contains(&y)) {
-            return Err("Choose five to ten fiscal years and a valid ending year.".into());
+        if !(3..=10).contains(&years) || end_year.is_some_and(|y| !(1900..=2200).contains(&y)) {
+            return Err("Choose three to ten fiscal years and a valid ending year.".into());
         }
         Ok(Self {
             ticker: yfinance_core::normalize_ticker(ticker)?,
