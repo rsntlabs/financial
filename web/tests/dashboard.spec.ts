@@ -1,13 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import {
   HTTP,
-  UPSTREAM,
   STATEMENTS,
   CHART,
   KEY,
   fixture,
   priceFixture,
-  timeseries,
   fulfillChart,
   stub,
 } from "./upstream";
@@ -32,7 +30,7 @@ async function search(page: Page, symbol = "TEST") {
     page.getByRole("button", { name: "Refresh price", exact: true }),
   ).toBeEnabled({ timeout: 15000 });
 }
-test("keyless browser providers and actual WASM render annual figures, statement views, CSV and neutral layout", async ({
+test("keyless provider API and WASM analysis render annual figures, statement views, CSV and neutral layout", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -194,8 +192,8 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await stub(page);
   await page.goto("./");
   await search(page);
-  await page.unroute(UPSTREAM);
-  await page.route(UPSTREAM, (r) =>
+  await page.unroute("**/api/*");
+  await page.route("**/api/*", (r) =>
     r.fulfill({ status: HTTP.NOT_FOUND, json: {} }),
   );
   await page
@@ -205,7 +203,7 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await expect(page.locator(".price-value")).toHaveText("126.00");
   await page.getByRole("button", { name: "Refresh data", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText(
-    "No annual revenue available",
+    "provider service could not complete the request",
   );
   await page.reload();
   await search(page);
@@ -276,7 +274,12 @@ test("missing data is a gap, empty upstream responses are not saved", async ({
   await stub(page);
   await page.route(STATEMENTS, (r) =>
     r.fulfill({
-      json: { timeseries: { result: [], error: null } },
+      json: {
+        schemaVersion: 1,
+        metrics: {},
+        sources: {},
+        fetchedAt: "2026-09-16T00:00:00Z",
+      },
     }),
   );
   await page.goto("./");
@@ -288,7 +291,7 @@ test("missing data is a gap, empty upstream responses are not saved", async ({
   await page.unroute(STATEMENTS);
   const data = fixture();
   delete data.metrics.annualNetIncome;
-  await page.route(STATEMENTS, (r) => r.fulfill({ json: timeseries(data) }));
+  await page.route(STATEMENTS, (r) => r.fulfill({ json: data }));
   await search(page);
   await page.locator("summary").click();
   await expect(page.getByText(/FY 2025: net income unavailable/)).toBeVisible();

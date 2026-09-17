@@ -2,9 +2,8 @@ import { expect, type Page, type Route } from "@playwright/test";
 
 export const UPSTREAM =
   /^https:\/\/(?:fc\.yahoo\.com|query[12]\.finance\.yahoo\.com|www\.sec\.gov|data\.sec\.gov|www\.alphavantage\.co)\//;
-export const STATEMENTS =
-  "https://query*.finance.yahoo.com/ws/fundamentals-timeseries/**";
-export const CHART = "https://query*.finance.yahoo.com/v8/finance/chart/**";
+export const STATEMENTS = "**/api/financials";
+export const CHART = "**/api/prices";
 export const KEY = "TESTKEY123";
 export const HTTP = {
   NOT_FOUND: 404,
@@ -122,76 +121,32 @@ export function chart(data = priceFixture()) {
 }
 
 export async function fulfillChart(route: Route, data = priceFixture()) {
-  const url = new URL(route.request().url());
-  expect(url.searchParams.get("interval")).toBe("1d");
-  expect(Number(url.searchParams.get("period1"))).toBeLessThan(
-    Date.parse("1980-12-12") / 1000,
-  );
-  expect(url.searchParams.has("range")).toBe(false);
-  return route.fulfill({ json: chart(data) });
+  return route.fulfill({ json: data });
 }
 
 export async function stub(page: Page, calls: string[] = [], key = "") {
-  // Every external request is intercepted. /api requests fail this test immediately.
-  await page.route("**/api/*", () => {
-    throw new Error("Provider requests must originate in browser WASM");
+  await page.route("**/api/*", (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().headers()["content-type"]).toContain(
+      "application/json",
+    );
+    const body = route.request().postDataJSON() as {
+      ticker: string;
+      apiKey: string;
+      years: number;
+      endYear?: number;
+    };
+    expect(body.years).toBe(10);
+    expect(body.apiKey).toBe(key);
+    if (route.request().url().endsWith("/api/financials")) {
+      calls.push("financials");
+      return route.fulfill({ json: fixture() });
+    }
+    calls.push("prices");
+    return route.fulfill({ json: priceFixture(body.ticker) });
   });
+  // Provider traffic belongs to the backend, never to the static page.
   await page.route(UPSTREAM, async (route) => {
-    const url = new URL(route.request().url());
-    expect(route.request().method()).toBe("GET");
-    if (url.hostname === "www.alphavantage.co") {
-      expect(key).not.toBe("");
-      expect(url.searchParams.get("apikey")).toBe(key);
-      return route.fulfill({
-        json: { "Error Message": "No extra test coverage" },
-      });
-    }
-    expect(url.href).not.toContain(KEY);
-    if (url.hostname === "fc.yahoo.com") {
-      return route.fulfill({
-        body: "",
-        headers: {
-          "set-cookie":
-            "A1=test; Domain=.yahoo.com; Path=/; Secure; SameSite=None; HttpOnly",
-        },
-      });
-    }
-    if (url.pathname.endsWith("/getcrumb")) {
-      return route.fulfill({ body: "test-crumb" });
-    }
-    if (url.pathname.includes("/timeseries/")) {
-      const types = url.searchParams.get("type")!.split(",");
-      if (types[0] === "annualTotalRevenue") {
-        calls.push("financials");
-      }
-      return route.fulfill({ json: timeseries(fixture(), types) });
-    }
-    if (url.pathname.includes("/quoteSummary/")) {
-      return route.fulfill({
-        json: {
-          quoteSummary: {
-            error: null,
-            result: [
-              {
-                quoteType: {
-                  quoteType: "EQUITY",
-                  longName: "Test Industries",
-                  exchange: "NMS",
-                },
-                assetProfile: {},
-              },
-            ],
-          },
-        },
-      });
-    }
-    if (url.pathname.includes("/chart/")) {
-      calls.push("prices");
-      return fulfillChart(
-        route,
-        priceFixture(decodeURIComponent(url.pathname.split("/").at(-1)!)),
-      );
-    }
-    return route.fulfill({ status: HTTP.NOT_FOUND, json: {} });
+    throw new Error(`Static page contacted upstream: ${route.request().url()}`);
   });
 }

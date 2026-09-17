@@ -2,8 +2,9 @@
 
 ```mermaid
 flowchart LR
-  UI[React / IndexedDB] --> WASM[Rust WASM providers + analysis]
-  WASM --> Yahoo[Yahoo Finance]
+  UI[React / IndexedDB] --> API[Rust provider API]
+  UI --> WASM[Rust WASM analysis]
+  API --> Yahoo[Yahoo Finance]
   Yahoo -->|remaining financial fields / years| SEC[SEC EDGAR]
   SEC -->|remaining supported fields + optional key| Alpha[Alpha Vantage]
   WASM --> Dataset[Normalized dataset + sources]
@@ -84,29 +85,22 @@ summarized in report warnings. Legacy Alpha-only cached payloads still parse.
 
 ## Browser transport
 
-`BrowserProviders.financials(ticker, apiKey, years, endYear)` and
-`BrowserProviders.prices(ticker, apiKey)` return promises of normalized JSON.
-The UI invokes them through a dedicated module Web Worker, keeping provider
-fetching and parsing off the main thread. One instance per worker retains Yahoo
-authentication and SEC caches. Alpha keys
-are validated and retained only during each call. Providers have a 75-second
-budget each, including price fallback.
+The dashboard posts to `/api/financials` and `/api/prices`. The native provider
+process retains Yahoo authentication and SEC caches. Alpha keys are validated
+and retained only during each call. Providers have a 75-second budget each,
+including price fallback.
 
-The build compiles `financial-providers` as a `cdylib`, including the existing
-analysis exports from `financial-core`. Both upstream crates use reqwest's WASM
-Fetch implementation. Yahoo requests include credentials; the browser stores
-cookies, while Rust acquires and refreshes crumbs. No JavaScript reads
-`Set-Cookie` or writes `Cookie`/`User-Agent` headers. Timers and cache timestamps
-use browser-compatible implementations. See [patch notes](../vendor/README.md).
-CORS is left to the browser and applies equally inside the worker; there is no
-proxy or opaque `no-cors` response path.
+The build still compiles the portable analysis exports from `financial-core` to
+WASM. Provider crates run natively behind the API, where Rust acquires and
+refreshes Yahoo cookies and crumbs and supplies the configured SEC User-Agent.
+See [patch notes](../vendor/README.md).
 
 CORS is a response policy controlled by the server receiving the cross-origin
 request. An `AllowAnyOrigin` policy on the dashboard, Vite, or the optional API
 changes only responses from that server; it cannot change Yahoo's response
 headers. To control CORS for provider data, the browser must call a backend that
 performs the Yahoo request server-side. The optional native API can serve that
-role, but the dashboard intentionally does not route through it by default.
+role, and the dashboard now routes acquisition through it by default.
 
 ## Optional native HTTP API
 
@@ -136,8 +130,9 @@ offering a public service.
 `cargo test --workspace --locked` covers priority, partial results, annual
 history gaps, skipped paid calls, selective Alpha endpoint calls, unsupported
 prices, currency/fiscal-date rejection, annual/restated SEC facts, Yahoo annual
-rows and normalized analysis. Browser tests use the real WASM clients and engine with intercepted
-upstream responses. They reject calls to the native service. They do not consume any upstream API allowance.
+rows and normalized analysis. Browser tests use the real WASM analysis engine
+with intercepted API responses and reject direct upstream browser calls. They do
+not consume any upstream API allowance.
 
 `cargo run -p financial-providers --example yahoo_smoke` is an opt-in live Yahoo
 statement/price check. Live SEC checks require a real `SEC_USER_AGENT`; live
