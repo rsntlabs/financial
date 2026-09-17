@@ -29,9 +29,11 @@ Serve `web/dist` on any static host, including GitHub Pages. No provider server
 or `VITE_PROVIDER_URL` is required. `BASE_PATH` configures a hosting subdirectory;
 the Pages workflow supplies it automatically.
 
-Requests use browser Fetch through Rust WASM. Browser and upstream access
-policies still apply; this implementation does not bypass CORS. Saved reports
-remain readable when providers are unavailable.
+Provider requests use browser Fetch through Rust WASM in a dedicated Web Worker,
+so authentication and response parsing do not block the UI thread. Workers have
+the same origin and CORS enforcement as the page: this architecture does not
+bypass an upstream CORS policy. Saved reports remain readable when providers are
+unavailable.
 
 The native service remains available for separate API consumers:
 

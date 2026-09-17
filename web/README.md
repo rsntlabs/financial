@@ -1,8 +1,9 @@
 # Browser dashboard
 
-React calls Rust WASM for both acquisition and analysis. `yfinance-rs` and
-`edgar-rs` run in the browser using reqwest's Fetch transport. The provider chain
-tries Yahoo, SEC EDGAR, then optional Alpha Vantage. No `/api` service is needed.
+React calls Rust WASM for both acquisition and analysis. Acquisition runs in a
+dedicated Web Worker; `yfinance-rs` and `edgar-rs` use reqwest's Fetch transport
+there. The provider chain tries Yahoo, SEC EDGAR, then optional Alpha Vantage.
+No `/api` service is needed, and the worker does not bypass browser CORS rules.
 See the [root README](../README.md) for startup and static hosting.
 
 ## Data and keys

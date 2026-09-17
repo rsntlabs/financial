@@ -70,7 +70,7 @@ function facts() {
   };
 }
 
-test("WASM uses typed Yahoo statements, browser credentials, and retries transient failures", async ({
+test("provider worker uses typed Yahoo statements and retries transient failures", async ({
   page,
 }) => {
   await stub(page);
@@ -79,6 +79,16 @@ test("WASM uses typed Yahoo statements, browser credentials, and retries transie
     credentials.push(value),
   );
   await page.addInitScript(() => {
+    const workerUrls: string[] = [];
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        workerUrls.push(String(url));
+        super(url, options);
+      }
+    };
+    (window as unknown as { providerWorkerUrls: string[] }).providerWorkerUrls =
+      workerUrls;
     const original = window.fetch;
     window.fetch = (input, init) => {
       const request = new Request(input, init);
@@ -116,8 +126,14 @@ test("WASM uses typed Yahoo statements, browser credentials, and retries transie
   expect((await saved(page)).metrics.annualTotalRevenue["2025-12-31"]).toBe(
     500e6,
   );
-  expect(credentials.length).toBeGreaterThan(3);
-  expect(new Set(credentials)).toEqual(new Set(["include"]));
+  expect(credentials).toHaveLength(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { providerWorkerUrls: string[] })
+          .providerWorkerUrls,
+    ),
+  ).toEqual([expect.stringContaining("provider.worker")]);
 });
 
 test("SEC requests run in WASM after Yahoo and preserve share classes and existing values", async ({
