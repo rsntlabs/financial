@@ -1,0 +1,9 @@
+name = "financials-provider-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[observability]
+enabled = true
+
+# Set with: wrangler secret put SEC_USER_AGENT
+# Value: "YourApp/1.0 your-real-contact@example.org" (SEC EDGAR fair-access policy).

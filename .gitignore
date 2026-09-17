@@ -7,6 +7,9 @@
 /web/playwright-report/
 /web/.env*
 !/web/.env.example
+/worker/node_modules/
+/worker/.wrangler/
+/worker/.dev.vars
 .DS_Store
 Thumbs.db
 *.log
