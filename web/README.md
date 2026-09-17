@@ -1,12 +1,13 @@
 # Browser dashboard
 
-React calls `/api/financials` and `/api/prices` for acquisition and uses Rust
-WASM for local analysis. The Rust backend runs `yfinance-rs` and `edgar-rs`, and
-tries Yahoo, SEC EDGAR, then optional Alpha Vantage. Keeping provider requests
-server-side avoids upstream browser CORS restrictions. The API permits requests
-from any static-page origin; protect public deployments with authentication and
-rate limiting.
-See the [root README](../README.md) for startup and static hosting.
+React uses Rust/WASM for both provider acquisition and local analysis: the
+`BrowserProviders` class (`crates/financial-providers`, browser build) runs
+`yfinance-rs` and `edgar-rs` directly in the tab, trying Yahoo, SEC EDGAR, then
+optional Alpha Vantage. Yahoo and SEC do not grant CORS to arbitrary origins,
+so those two providers route through the Cloudflare Worker in `../worker`
+instead of calling them directly; Alpha Vantage is called directly. See the
+[root README](../README.md) for startup and static hosting, and
+[provider architecture](../docs/providers.md) for the full design.
 
 ## Data and keys
 
@@ -15,9 +16,11 @@ for the tab, or (when explicitly selected) in localStorage. WASM sends the key
 only to Alpha Vantage when filling gaps. It is never included in Yahoo/SEC
 requests or financial/price snapshots. API keys must not be build variables.
 
-`npm run wasm` builds the analysis module. `npm run dev` serves the UI; `npm run
-build` also regenerates WASM for production. The UI uses same-origin `/api`
-paths, so development requires a backend or a dev proxy for those routes.
+`npm run wasm` builds the provider and analysis module. `npm run dev` serves
+the UI; `npm run build` also regenerates WASM for production. Set
+`VITE_PROVIDER_PROXY_URL` (see `.env.example`) to a running Worker before
+`npm run dev` — `cd ../worker && npm run dev` starts one on
+`http://127.0.0.1:8787`.
 
 ## Cache
 
@@ -54,18 +57,20 @@ export.
 
 ```sh
 cargo fmt --all --check
-cargo test --workspace --features financial-providers/server --locked
-cargo clippy --workspace --all-targets --features financial-providers/server --locked -- -D warnings
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo clippy -p financial-providers --lib --target wasm32-unknown-unknown --locked -- -D warnings
 cd web
 npm ci
-npm run build
+VITE_PROVIDER_PROXY_URL=https://financials-proxy.test npm run build
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-Browser tests intercept `/api` and run the actual WASM analysis. They reject any
-direct browser request to Yahoo, SEC or Alpha and cover API payloads, key
-handling, provenance, statements/CSV, cache reuse, failed refreshes, full price
-history, delayed responses and cache-clear races. Rust tests cover provider
-authentication, retries and fallback. No live provider quota is consumed.
+Browser tests run the real WASM provider chain and analysis engine, with the
+Cloudflare Worker proxy's routes intercepted (see `tests/upstream.ts`). They
+reject any direct browser request to Yahoo or SEC and cover acquisition
+payloads, key handling, provenance, statements/CSV, cache reuse, failed
+refreshes, full price history, delayed responses and cache-clear races. Rust
+tests cover provider authentication, retries and fallback; `../worker` has its
+own Vitest suite. No live provider quota is consumed.

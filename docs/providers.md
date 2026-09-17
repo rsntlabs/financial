@@ -2,19 +2,24 @@
 
 ```mermaid
 flowchart LR
-  UI[React / IndexedDB] --> API[Rust provider API]
-  UI --> WASM[Rust WASM analysis]
-  API --> Yahoo[Yahoo Finance]
-  Yahoo -->|remaining financial fields / years| SEC[SEC EDGAR]
-  SEC -->|remaining supported fields + optional key| Alpha[Alpha Vantage]
+  UI[React / IndexedDB] --> WASM[Rust WASM: providers + analysis]
+  WASM --> Worker[Cloudflare Worker proxy]
+  Worker --> Yahoo[Yahoo Finance]
+  Worker --> SEC[SEC EDGAR]
+  WASM -->|optional key, direct, unproxied| Alpha[Alpha Vantage]
+  Yahoo -->|remaining financial fields / years| SEC
+  SEC -->|remaining supported fields + optional key| Alpha
   WASM --> Dataset[Normalized dataset + sources]
 ```
 
 `financial-core` owns the portable versioned `Dataset`, analysis and statement
 IDs. `financial-providers` owns the async `Provider` trait, `ProviderChain`,
-source adapters and WASM exports. Axum and native runtime features are excluded
-from the browser build. An optional `server` feature retains the native HTTP API. Another provider can implement the trait without changing the analysis
-engine or UI. `ProviderChain::new` fixes the requested priority order.
+source adapters and WASM exports. The browser build (`crates/financial-providers`
+compiled to `wasm32-unknown-unknown`) runs the full provider chain itself; see
+[Browser transport](#browser-transport) for why Yahoo and SEC calls route
+through the Cloudflare Worker in `worker/`. Another provider can implement the
+`Provider` trait without changing the analysis engine or UI. `ProviderChain::new`
+fixes the requested priority order.
 
 ## Selection and merging
 
@@ -85,54 +90,53 @@ summarized in report warnings. Legacy Alpha-only cached payloads still parse.
 
 ## Browser transport
 
-The dashboard posts to `/api/financials` and `/api/prices`. The native provider
-process retains Yahoo authentication and SEC caches. Alpha keys are validated
-and retained only during each call. Providers have a 75-second budget each,
-including price fallback.
-
-The build still compiles the portable analysis exports from `financial-core` to
-WASM. Provider crates run natively behind the API, where Rust acquires and
-refreshes Yahoo cookies and crumbs and supplies the configured SEC User-Agent.
-See [patch notes](../vendor/README.md).
+`web/src/lib/service.ts` constructs one `BrowserProviders` WASM instance per
+page (see `crates/financial-providers/src/browser.rs`) and calls its
+`financials`/`prices` methods directly; there is no `/api/*` fetch layer.
+Alpha Vantage keys are held in memory only for each call and sent straight
+from the browser to `alphavantage.co`, never to the Worker. Providers have a
+75-second budget each, including price fallback (`ProviderChain`, unchanged
+by the transport).
 
 CORS is a response policy controlled by the server receiving the cross-origin
-request. An `AllowAnyOrigin` policy on the dashboard, Vite, or the optional API
-changes only responses from that server; it cannot change Yahoo's response
-headers. To control CORS for provider data, the browser must call a backend that
-performs the Yahoo request server-side. The optional native API can serve that
-role, and the dashboard now routes acquisition through it by default.
+request. An `AllowAnyOrigin` policy on the dashboard or Vite changes only
+responses from that server; it cannot change Yahoo's or SEC's response
+headers, so calling them directly from the browser fails regardless of any
+policy set here. The Cloudflare Worker in `worker/` performs those requests
+server-side and sets its own CORS policy on its responses. On the
+`wasm32-unknown-unknown` build, `Yahoo::new` and `Edgar::new` take the
+Worker's origin and point every Yahoo/SEC base URL at it (see
+[patch notes](../vendor/README.md) for the matching `yfinance-rs` change);
+native builds and tests are unaffected and still call Yahoo/SEC directly.
 
-## Optional native HTTP API
+## Cloudflare Worker proxy
 
-`POST /api/financials` accepts `{ticker, apiKey?, years?, endYear?}` and returns
-`Dataset` schema version 1. `POST /api/prices` accepts the same shape and returns
-`{ticker, fetchedAt, points, source, outputSize: "full"}`. Years must be 5–10.
-`GET /api/health` checks service availability without contacting providers.
-
-The API returns `Access-Control-Allow-Origin: *` and accepts cross-origin `GET`
-and `POST` requests with `Content-Type`, allowing a static dashboard hosted on
-any origin to call it without per-deployment configuration. It does not allow
-credentialed CORS requests and does not use cookie authentication. Because a
-public deployment can still consume network, concurrency and upstream quotas,
-add authentication and per-user rate limits at the reverse proxy when needed.
-
-Keys are optional, validated, kept only for the request, and never included in
-URLs between browser and service. The Alpha crate sends its key to the upstream
-API using that API's query convention; upstream errors are redacted. Only deploy
-behind a trusted HTTPS endpoint. Responses use `Cache-Control: no-store`, bodies
-are limited to 4 KiB, and four concurrent requests are admitted. Financial
-providers have a 75-second budget each and requests a 240-second outer budget.
-Add authentication and per-user rate limits at your reverse proxy before
-offering a public service.
+`worker/` proxies `GET /yahoo/chart/:symbol`, `/yahoo/quoteSummary/:symbol`
+and `/yahoo/timeseries/:symbol` to the matching Yahoo Finance endpoint, and
+`GET /sec/files/company_tickers.json` / `/sec/api/xbrl/...` to `www.sec.gov`
+and `data.sec.gov`. It owns the real Yahoo session (cookie and crumb, fetched
+and cached Worker-side) and the real SEC `User-Agent` (from the `SEC_USER_AGENT`
+secret). The vendored client never fetches a real cookie or crumb of its own on
+wasm32 — the Worker discards and overwrites whatever crumb it receives anyway
+— so there is no auth-handshake round trip to reach Yahoo from the browser, and
+no credential ever crosses the browser/Worker boundary; every response keeps a
+plain `Access-Control-Allow-Origin: *` rather than a credentialed, echoed-origin
+response. See [worker/README](../worker/README.md)
+for routes, local development and deployment, including the one-time
+`PROVIDER_PROXY_URL` repository variable CI needs to build the dashboard
+against a real deployment.
 
 ## Verification
 
 `cargo test --workspace --locked` covers priority, partial results, annual
 history gaps, skipped paid calls, selective Alpha endpoint calls, unsupported
 prices, currency/fiscal-date rejection, annual/restated SEC facts, Yahoo annual
-rows and normalized analysis. Browser tests use the real WASM analysis engine
-with intercepted API responses and reject direct upstream browser calls. They do
-not consume any upstream API allowance.
+rows and normalized analysis. Browser tests use the real WASM provider chain
+and analysis engine with intercepted Cloudflare Worker proxy responses, and
+reject any request that reaches Yahoo or SEC directly (see `web/tests/upstream.ts`).
+They do not consume any upstream API allowance. `worker/` has its own `npm test`
+(Vitest) covering routing, session caching and CORS, independent of the
+browser tests.
 
 `cargo run -p financial-providers --example yahoo_smoke` is an opt-in live Yahoo
 statement/price check. Live SEC checks require a real `SEC_USER_AGENT`; live

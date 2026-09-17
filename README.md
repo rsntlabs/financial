@@ -1,10 +1,12 @@
 # Financials dashboard
 
-A React dashboard with a Rust provider API and WASM analysis. The backend calls
-**Yahoo Finance → SEC EDGAR → optional Alpha Vantage**. Statements and daily
-prices stay in IndexedDB, with sources preserved per metric and date.
-Charts and tables cover 5 or 10 fiscal years, cash generation, margins and daily
-prices, with CSV export.
+A static React dashboard with Rust/WASM provider clients and analysis. The
+browser calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directly;
+a small Cloudflare Worker proxies the Yahoo and SEC requests, since neither
+grants CORS to arbitrary origins. Statements and daily prices stay in
+IndexedDB, with sources preserved per metric and date. Charts and tables cover
+5 or 10 fiscal years, cash generation, margins and daily prices, with CSV
+export.
 
 ## Run locally
 
@@ -13,49 +15,34 @@ Requires Rust 1.91+, the WASM target, wasm-bindgen-cli 0.2.126 and Node 22.12+.
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
-cd web
-npm ci
-npm run build
-cd ..
-SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
-  cargo run -p financial-providers --features server
+cd worker && npm ci
+echo "SEC_USER_AGENT=YourApp/1.0 your-real-contact@example.org" > .dev.vars
+npm run dev &   # wrangler dev, http://127.0.0.1:8787
+cd ../web && npm ci
+echo 'VITE_PROVIDER_PROXY_URL=http://127.0.0.1:8787' > .env
+npm run dev
 ```
 
-Open the backend URL. For development, run the backend and then `npm run wasm`
-and `npm run dev`; Vite proxies `/api` to `127.0.0.1:3001`.
 Search without a key; **Data settings** accepts an optional Alpha Vantage key
-for gaps. The browser sends the key to the backend, which sends it only to Alpha
-Vantage.
+for gaps. The browser sends that key only to Alpha Vantage, directly; Yahoo and
+SEC requests never see it. See [worker notes](worker/README.md).
 
 ## Deployment
 
-Serve `web/dist` through the provider server, or configure a static host to
-forward `/api/*` to it. `BASE_PATH` configures a hosting subdirectory.
-
-The static dashboard sends acquisition requests to `/api/financials` and
-`/api/prices`; the Rust backend calls the upstream providers. Financial analysis
-continues to run locally in WASM. Saved reports remain readable when the backend
-or providers are unavailable.
+`web/dist` is fully static (GitHub Pages, in `.github/workflows/web.yml`).
+`BASE_PATH` configures a hosting subdirectory. Deploy the Cloudflare Worker in
+`worker/` first (`npm run deploy`, after `wrangler secret put SEC_USER_AGENT`),
+then set `VITE_PROVIDER_PROXY_URL` to its origin before building the dashboard.
+CI does this from repository secrets and a `PROVIDER_PROXY_URL` variable; see
+[worker notes](worker/README.md) for the one-time setup.
 
 An application-level `AllowAnyOrigin` setting only adds an
-`Access-Control-Allow-Origin` header to responses served by that application. It
-cannot add the header to Yahoo's responses, so setting it on this dashboard (or
-its static host) would not make direct Yahoo requests succeed. A server-side
-proxy can call Yahoo without browser CORS enforcement and expose its own CORS
-policy. The optional backend below allows API requests from any origin so a
-single static page can use it; protect public deployments with authentication
-and rate limiting.
+`Access-Control-Allow-Origin` header to responses served by that application.
+It cannot add the header to Yahoo's or SEC's responses, so setting it on this
+dashboard (or its static host) would not make direct requests to them succeed.
+The Worker calls them server-side, without browser CORS enforcement, and
+exposes its own permissive CORS policy in response, since it needs no browser
+credentials.
 
-Run the backend and static dashboard together with:
-
-```sh
-SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
-  cargo run -p financial-providers --features server
-```
-
-Native builds need OpenSSL development headers and pkg-config on Linux.
-`BIND_ADDR` defaults to `127.0.0.1:3001`, and `WEB_DIST` to `web/dist`.
-The dashboard uses the API routes served by this service.
-
-See [provider architecture](docs/providers.md), [web notes](web/README.md), and
-[local crate patches](vendor/README.md).
+See [provider architecture](docs/providers.md), [web notes](web/README.md),
+[worker notes](worker/README.md), and [local crate patches](vendor/README.md).
