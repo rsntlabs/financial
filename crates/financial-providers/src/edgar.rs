@@ -2,6 +2,7 @@ use crate::{Needs, Provider, Request};
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use edgar_rs::{CompanyFacts, Fact};
+use serde::Serialize;
 use std::{
     collections::{BTreeSet, HashMap},
     time::Duration,
@@ -9,6 +10,12 @@ use std::{
 use tokio::sync::Mutex;
 use web_time::Instant;
 use yfinance_core::dataset::Dataset;
+
+#[derive(Serialize)]
+pub struct TickerEntry {
+    pub ticker: String,
+    pub name: String,
+}
 
 // Ordered aliases: prefer consolidated revenue and income over narrower concepts.
 const MAPPINGS: &[(&str, &[&str], bool)] = &[
@@ -210,7 +217,7 @@ pub fn normalize(facts: &CompanyFacts) -> Dataset {
     data
 }
 struct Cache {
-    tickers: HashMap<String, u64>,
+    tickers: HashMap<String, (u64, String)>,
     tickers_at: Instant,
     facts: Option<(String, Instant, CompanyFacts)>,
 }
@@ -222,6 +229,7 @@ pub struct Edgar {
 }
 
 const SEC_TICKERS_PATH: &str = "/files/company_tickers.json";
+const TICKERS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 fn new_cache() -> Mutex<Cache> {
     Mutex::new(Cache {
         tickers: HashMap::new(),
@@ -284,6 +292,46 @@ impl Edgar {
         })
     }
 }
+impl Edgar {
+    async fn refresh_tickers(&self, cache: &mut Cache) -> Result<(), String> {
+        if !cache.tickers.is_empty() && cache.tickers_at.elapsed() <= TICKERS_TTL {
+            return Ok(());
+        }
+        // Preserve share classes: edgar-rs get_tickers keys by CIK, discarding duplicate CIK tickers.
+        let tickers: HashMap<String, edgar_rs::Ticker> = self
+            .http
+            .get(&self.tickers_url)
+            .send()
+            .await
+            .map_err(|_| "SEC ticker lookup unavailable.")?
+            .error_for_status()
+            .map_err(|_| "SEC ticker lookup rejected.")?
+            .json()
+            .await
+            .map_err(|_| "SEC ticker lookup unreadable.")?;
+        cache.tickers = tickers
+            .into_values()
+            .map(|t| (t.ticker.replace('.', "-"), (t.cik, t.title)))
+            .collect();
+        cache.tickers_at = Instant::now();
+        Ok(())
+    }
+
+    /// Every SEC-registered ticker and company name, for client-side search.
+    pub async fn tickers(&self) -> Result<Vec<TickerEntry>, String> {
+        let mut cache = self.cache.lock().await;
+        self.refresh_tickers(&mut cache).await?;
+        Ok(cache
+            .tickers
+            .iter()
+            .map(|(ticker, (_, name))| TickerEntry {
+                ticker: ticker.clone(),
+                name: name.clone(),
+            })
+            .collect())
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Provider for Edgar {
@@ -297,28 +345,11 @@ impl Provider for Edgar {
                 return Ok(normalize(facts));
             }
         }
-        if cache.tickers.is_empty() || cache.tickers_at.elapsed() > Duration::from_secs(86400) {
-            // Preserve share classes: edgar-rs get_tickers keys by CIK, discarding duplicate CIK tickers.
-            let tickers: HashMap<String, edgar_rs::Ticker> = self
-                .http
-                .get(&self.tickers_url)
-                .send()
-                .await
-                .map_err(|_| "SEC ticker lookup unavailable.")?
-                .error_for_status()
-                .map_err(|_| "SEC ticker lookup rejected.")?
-                .json()
-                .await
-                .map_err(|_| "SEC ticker lookup unreadable.")?;
-            cache.tickers = tickers
-                .into_values()
-                .map(|t| (t.ticker.replace('.', "-"), t.cik))
-                .collect();
-            cache.tickers_at = Instant::now();
-        }
-        let cik = *cache
+        self.refresh_tickers(&mut cache).await?;
+        let cik = cache
             .tickers
             .get(&request.ticker.replace('.', "-"))
+            .map(|(cik, _)| *cik)
             .ok_or("No SEC issuer for this ticker.")?;
         let facts = self
             .client

@@ -41,6 +41,12 @@ impl BrowserProviders {
         let prices = chain.prices(&ticker).await?;
         serde_json::to_string(&prices).map_err(|_| "Invalid price data.".into())
     }
+
+    /// Every SEC-registered ticker and company name, for the search dropdown.
+    pub async fn tickers(&self) -> Result<String, String> {
+        let tickers = self.edgar.tickers().await?;
+        serde_json::to_string(&tickers).map_err(|_| "Invalid ticker data.".into())
+    }
 }
 
 impl BrowserProviders {
