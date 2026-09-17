@@ -140,7 +140,11 @@ export function StockPriceChart({
               <span className="price-value">{price(latest.close)}</span>
               <span
                 className={
-                  change !== null && change < 0 ? "negative" : "price-change"
+                  change === null || change === 0
+                    ? "price-change"
+                    : change < 0
+                      ? "negative"
+                      : "gain"
                 }
               >
                 {change !== null && previous
