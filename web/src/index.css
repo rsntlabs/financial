@@ -721,6 +721,20 @@
   background: var(--muted);
   font-weight: 600;
 }
+.statement-panel th:first-child,
+.statement-panel td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+}
+.statement-panel th:first-child {
+  z-index: 2;
+  background: var(--muted);
+}
+.statement-panel tr.subtotal td:first-child {
+  background: var(--muted);
+}
 .footnote {
   color: var(--muted-foreground);
   font-size: 10px;
