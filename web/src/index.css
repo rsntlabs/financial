@@ -1075,6 +1075,9 @@
   padding: 28px;
   gap: 24px;
 }
+.settings-card .eyebrow {
+  justify-content: flex-start;
+}
 .settings-card h2 {
   font-size: 24px;
   font-weight: 600;
