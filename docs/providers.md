@@ -101,12 +101,25 @@ use browser-compatible implementations. See [patch notes](../vendor/README.md).
 CORS is left to the browser and applies equally inside the worker; there is no
 proxy or opaque `no-cors` response path.
 
+CORS is a response policy controlled by the server receiving the cross-origin
+request. An `AllowAnyOrigin` policy on the dashboard, Vite, or the optional API
+changes only responses from that server; it cannot change Yahoo's response
+headers. To control CORS for provider data, the browser must call a backend that
+performs the Yahoo request server-side. The optional native API can serve that
+role, but the dashboard intentionally does not route through it by default.
+
 ## Optional native HTTP API
 
 `POST /api/financials` accepts `{ticker, apiKey?, years?, endYear?}` and returns
 `Dataset` schema version 1. `POST /api/prices` accepts the same shape and returns
 `{ticker, fetchedAt, points, source, outputSize: "full"}`. Years must be 5–10.
 `GET /api/health` checks service availability without contacting providers.
+
+Set `WEB_ORIGIN` to the exact trusted dashboard origin to enable cross-origin API
+access. A wildcard policy is intentionally not the default: this service accepts
+provider requests and optional user API keys, so making it an unauthenticated
+public proxy would permit third parties to consume its network, concurrency and
+upstream quotas.
 
 Keys are optional, validated, kept only for the request, and never included in
 URLs between browser and service. The Alpha crate sends its key to the upstream
