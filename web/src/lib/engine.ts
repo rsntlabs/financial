@@ -1,17 +1,5 @@
 import type { Report } from "./types";
-let enginePromise: Promise<typeof import("../wasm/financial_core")> | undefined;
-async function getEngine() {
-  enginePromise ??= import("../wasm/financial_core")
-    .then(async (engine) => {
-      await engine.default();
-      return engine;
-    })
-    .catch((error) => {
-      enginePromise = undefined;
-      throw error;
-    });
-  return enginePromise;
-}
+import { loadEngine } from "./wasm";
 export async function analyze(
   ticker: string,
   payload: unknown,
@@ -20,7 +8,7 @@ export async function analyze(
 ): Promise<Report> {
   let engine;
   try {
-    engine = await getEngine();
+    engine = await loadEngine();
   } catch {
     throw new Error(
       "The analysis engine could not load. Refresh the page and try again.",
