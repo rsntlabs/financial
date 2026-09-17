@@ -6,15 +6,6 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-server = ["dep:axum", "dep:tower-http"]
-
-[[bin]]
-name = "financial-providers"
-path = "src/main.rs"
-required-features = ["server"]
-
 [dependencies]
 yfinance-core = { path = "../financial-core" }
 yfinance-rs = "=0.9.1"
@@ -36,9 +27,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
-axum = { version = "0.8", optional = true }
-tower-http = { version = "0.6", features = ["fs", "cors"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-
-[dev-dependencies]
-tower = { version = "0.5", features = ["util"] }

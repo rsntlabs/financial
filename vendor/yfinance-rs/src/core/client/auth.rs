@@ -1,6 +1,8 @@
 //! Cookie & crumb acquisition for Yahoo endpoints.
 
-use crate::core::{error::YfError, net::status_error};
+use crate::core::error::YfError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::core::net::status_error;
 #[cfg(not(target_arch = "wasm32"))]
 use reqwest::{
     RequestBuilder,
@@ -26,9 +28,23 @@ impl super::YfClient {
         }
 
         // With the fetch lock held, we can safely perform the network operations.
+        self.establish_credentials().await
+    }
+
+    // On wasm32 the configured base URLs point at a same-origin proxy that
+    // owns the real Yahoo session and overwrites whatever crumb it receives
+    // (see the browser build's proxy in the main application), so fetching a
+    // real cookie and crumb here would just be a discarded round trip.
+    #[cfg(target_arch = "wasm32")]
+    async fn establish_credentials(&self) -> Result<(), YfError> {
+        self.write_state().crumb = Some(String::new());
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn establish_credentials(&self) -> Result<(), YfError> {
         self.get_cookie().await?;
         self.get_crumb_internal().await?;
-
         Ok(())
     }
 
@@ -43,7 +59,7 @@ impl super::YfClient {
     pub(crate) fn with_auth_cookie(&self, req: RequestBuilder) -> RequestBuilder {
         #[cfg(target_arch = "wasm32")]
         {
-            req.fetch_credentials_include()
+            req
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -55,31 +71,23 @@ impl super::YfClient {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn get_cookie(&self) -> Result<(), YfError> {
         let req = self.http.get(self.cookie_url.clone());
-        let _resp = self.send_with_retry(req, None).await?;
-        // Fetch stores HttpOnly cookies; browser code cannot read Set-Cookie.
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.write_state().cookie = Some(cookie_header(_resp.headers())?);
-        }
+        let resp = self.send_with_retry(req, None).await?;
+        self.write_state().cookie = Some(cookie_header(resp.headers())?);
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn get_crumb_internal(&self) -> Result<(), YfError> {
         let url = self.crumb_url.clone();
-        let req = self.http.get(url.clone());
-        #[cfg(target_arch = "wasm32")]
-        let req = req.fetch_credentials_include();
-        #[cfg(not(target_arch = "wasm32"))]
-        let req = {
-            let cookie = self
-                .read_state()
-                .cookie
-                .clone()
-                .ok_or_else(|| YfError::Auth("Cookie is missing, cannot get crumb".into()))?;
-            req.header(COOKIE, cookie)
-        };
+        let cookie = self
+            .read_state()
+            .cookie
+            .clone()
+            .ok_or_else(|| YfError::Auth("Cookie is missing, cannot get crumb".into()))?;
+        let req = self.http.get(url.clone()).header(COOKIE, cookie);
         let resp = self.send_with_retry(req, None).await?;
 
         if !resp.status().is_success() {
@@ -95,6 +103,7 @@ impl super::YfClient {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn validate_crumb_response(crumb: &str) -> Result<&str, YfError> {
     const MAX_CRUMB_LEN: usize = 128;
     const ERROR_PHRASES: &[&str] = &[
@@ -151,7 +160,7 @@ fn cookie_header(headers: &HeaderMap) -> Result<String, YfError> {
     Ok(cookies.join("; "))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::validate_crumb_response;
 

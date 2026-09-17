@@ -549,7 +549,11 @@ impl YfClient {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            req = req.fetch_credentials_include().timeout(self.timeout);
+            // No cookie crosses the browser/proxy boundary: the configured base
+            // URLs point at a same-purpose proxy that owns the Yahoo session, so
+            // the proxy can keep Access-Control-Allow-Origin: * instead of a
+            // credentialed, echoed-origin response.
+            req = req.timeout(self.timeout);
         }
 
         let cfg = override_retry.unwrap_or(&self.retry);

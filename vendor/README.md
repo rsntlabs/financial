@@ -6,10 +6,17 @@ reproducible without modifying the Cargo registry.
 
 - `yfinance-rs` 0.9.1: use browser time and timers, replace Moka's worker-thread
   cache with a bounded in-memory cache on WASM, keep native-only proxy/runtime
-  configuration out of the browser, and let Fetch manage Yahoo cookies.
-  Request timeouts still apply. The `HistoryService` Send contract is bridged
-  with `SendWrapper` on the single browser thread. Request construction and
-  financial/profile/history parsing remain upstream code.
+  configuration out of the browser, and drop the WASM `credentials: 'include'`
+  fetch mode. The browser build points every base URL at the Cloudflare Worker
+  proxy (see [provider architecture](../docs/providers.md)), which owns the
+  real Yahoo cookie/crumb session; no cookie needs to cross the browser/proxy
+  boundary, so the proxy keeps a plain `Access-Control-Allow-Origin: *`. On
+  WASM, `ensure_credentials` also skips the cookie/crumb network round trip
+  entirely and stores a placeholder crumb instead, since the proxy discards
+  and overwrites whatever crumb it receives anyway. Request timeouts still
+  apply. The `HistoryService` Send contract is bridged with `SendWrapper` on
+  the single browser thread. Request construction and financial/profile/history
+  parsing remain upstream code.
 - `edgar-rs` 0.1.0: select Governor's portable clock and browser timers on WASM
   instead of Quanta's OS clock. Its source is unchanged.
 

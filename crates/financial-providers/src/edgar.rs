@@ -217,22 +217,32 @@ struct Cache {
 pub struct Edgar {
     client: edgar_rs::Client,
     http: reqwest::Client,
+    tickers_url: String,
     cache: Mutex<Cache>,
 }
+
+const SEC_TICKERS_PATH: &str = "/files/company_tickers.json";
+fn new_cache() -> Mutex<Cache> {
+    Mutex::new(Cache {
+        tickers: HashMap::new(),
+        tickers_at: Instant::now(),
+        facts: None,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl Edgar {
     pub fn new(user_agent: &str) -> Result<Self, String> {
-        #[cfg(not(target_arch = "wasm32"))]
         if !user_agent.contains('@') {
             return Err(
                 "Set SEC_USER_AGENT to your application name and real contact email.".into(),
             );
         }
-        let builder = reqwest::Client::builder();
-        #[cfg(not(target_arch = "wasm32"))]
-        let builder = builder
+        let http = reqwest::Client::builder()
             .user_agent(user_agent)
-            .timeout(Duration::from_secs(25));
-        let http = builder.build().map_err(|_| "Invalid SEC user agent.")?;
+            .timeout(Duration::from_secs(25))
+            .build()
+            .map_err(|_| "Invalid SEC user agent.")?;
         // edgar-rs does not apply its user agent when a custom client is supplied.
         let client = edgar_rs::ClientBuilder::new(user_agent)
             .http_client(http.clone())
@@ -242,11 +252,35 @@ impl Edgar {
         Ok(Self {
             client,
             http,
-            cache: Mutex::new(Cache {
-                tickers: HashMap::new(),
-                tickers_at: Instant::now(),
-                facts: None,
-            }),
+            tickers_url: format!("https://www.sec.gov{SEC_TICKERS_PATH}"),
+            cache: new_cache(),
+        })
+    }
+}
+
+// SEC EDGAR does not grant CORS to arbitrary origins, so the browser build
+// routes through a same-origin Cloudflare Worker that injects the real
+// SEC_USER_AGENT. The 5 req/s limiter below is per browser tab, not global:
+// the Worker itself does not throttle aggregate traffic across tabs or users.
+#[cfg(target_arch = "wasm32")]
+impl Edgar {
+    pub fn new(proxy_base: &str) -> Result<Self, String> {
+        let proxy_base = proxy_base.trim_end_matches('/');
+        let sec_base = format!("{proxy_base}/sec");
+        let tickers_url = format!("{sec_base}{SEC_TICKERS_PATH}");
+        let http = reqwest::Client::new();
+        let client = edgar_rs::ClientBuilder::new("Financials browser (proxied)")
+            .http_client(http.clone())
+            .base_sec_url(sec_base.clone())
+            .base_data_url(sec_base)
+            .rate_limit(5)
+            .build()
+            .map_err(|_| "Could not initialize SEC client.")?;
+        Ok(Self {
+            client,
+            http,
+            tickers_url,
+            cache: new_cache(),
         })
     }
 }
@@ -267,7 +301,7 @@ impl Provider for Edgar {
             // Preserve share classes: edgar-rs get_tickers keys by CIK, discarding duplicate CIK tickers.
             let tickers: HashMap<String, edgar_rs::Ticker> = self
                 .http
-                .get("https://www.sec.gov/files/company_tickers.json")
+                .get(&self.tickers_url)
                 .send()
                 .await
                 .map_err(|_| "SEC ticker lookup unavailable.")?

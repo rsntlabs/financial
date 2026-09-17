@@ -10,12 +10,14 @@ pub struct BrowserProviders {
 
 #[wasm_bindgen]
 impl BrowserProviders {
+    /// `proxy_base` is the deployed Cloudflare Worker origin (e.g.
+    /// `https://financials-provider-proxy.example.workers.dev`) that proxies
+    /// Yahoo Finance and SEC EDGAR requests; see docs/providers.md.
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Result<BrowserProviders, String> {
+    pub fn new(proxy_base: String) -> Result<BrowserProviders, String> {
         Ok(Self {
-            yahoo: Yahoo::new()?,
-            // The browser supplies its own User-Agent; no contact header can be set here.
-            edgar: Edgar::new("Financials browser")?,
+            yahoo: Yahoo::new(&proxy_base)?,
+            edgar: Edgar::new(&proxy_base)?,
         })
     }
 
