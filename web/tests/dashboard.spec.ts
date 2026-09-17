@@ -309,7 +309,7 @@ test("prices load separately and stale ticker responses cannot replace the curre
   const gate = new Promise<void>((r) => (release = r));
   const pending = new Promise<void>((r) => (started = r));
   await page.route(CHART, async (r) => {
-    const ticker = new URL(r.request().url()).pathname.split("/").at(-1)!;
+    const ticker = r.request().postDataJSON().ticker as string;
     if (ticker === "TEST") {
       started();
       await gate;
