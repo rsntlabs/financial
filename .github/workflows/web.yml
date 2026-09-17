@@ -57,6 +57,7 @@ jobs:
       - run: cargo clippy -p financial-providers --lib --target wasm32-unknown-unknown --locked -- -D warnings
       - run: npm ci
         working-directory: web
+      - run: echo "Building against provider proxy $VITE_PROVIDER_PROXY_URL"
       - run: npm run build
         working-directory: web
       - run: npx playwright install --with-deps chromium
