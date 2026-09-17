@@ -361,17 +361,18 @@ test("legacy Alpha statements open without a key while prices use the new provid
 }) => {
   const calls: string[] = [];
   await stub(page, calls);
-  await page.goto("./");
-  await page.evaluate(async () => {
-    const db = await new Promise<IDBDatabase>((r) => {
-      const q = indexedDB.open("financials-alphavantage-v1", 2);
-      q.onupgradeneeded = () => {
-        for (const store of ["stocks", "pending", "prices"])
-          q.result.createObjectStore(store, { keyPath: "ticker" });
-      };
-      q.onsuccess = () => r(q.result);
-    });
-    await new Promise<void>((r) => {
+  // The app now opens this database itself on page load (to cache the ticker
+  // list), so seeding it via page.evaluate() after goto() races the app for
+  // who creates it first. addInitScript() runs before any of the page's own
+  // scripts on every navigation, so this legacy-version open always wins.
+  await page.addInitScript(() => {
+    const q = indexedDB.open("financials-alphavantage-v1", 2);
+    q.onupgradeneeded = () => {
+      for (const store of ["stocks", "pending", "prices"])
+        q.result.createObjectStore(store, { keyPath: "ticker" });
+    };
+    q.onsuccess = () => {
+      const db = q.result;
       const tx = db.transaction("stocks", "readwrite");
       tx.objectStore("stocks").put({
         ticker: "TEST",
@@ -392,10 +393,10 @@ test("legacy Alpha statements open without a key while prices use the new provid
           cashflow: { annualReports: [] },
         },
       });
-      tx.oncomplete = () => r();
-    });
-    db.close();
+      tx.oncomplete = () => db.close();
+    };
   });
+  await page.goto("./");
   await search(page);
   expect(calls).toEqual(["prices"]);
   await expect(page.locator(".metric-highlight .metric-value")).toHaveText(
@@ -427,7 +428,10 @@ test("typing a ticker shows a filtered dropdown with company names", async ({
   await expect(listbox).toContainText("Test Bancorp");
   await page.keyboard.press("Escape");
   await expect(listbox).toHaveCount(0);
-  await input.fill("TE");
+  // A different value than before ("T", not "TE"): refilling the same text
+  // wouldn't fire React's onChange, since Playwright sets the DOM value
+  // directly and React skips onChange when it matches the already-committed value.
+  await input.fill("T");
   await page.getByRole("option").first().click();
   await expect(listbox).toHaveCount(0);
   await expect(input).toHaveValue("TEST");
