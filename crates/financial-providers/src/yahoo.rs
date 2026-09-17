@@ -1,7 +1,12 @@
 use crate::{Needs, PricePoint, Provider, Request};
 use async_trait::async_trait;
+use std::time::Duration;
 use yfinance_core::dataset::Dataset;
 use yfinance_rs::{FundamentalsBuilder, HistoryBuilder, Money, Range, YfClient};
+
+#[cfg(not(target_arch = "wasm32"))]
+const DESKTOP_USER_AGENT: &str = "Mozilla/5.0";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub struct Yahoo {
     client: YfClient,
@@ -17,13 +22,13 @@ impl Yahoo {
     pub fn new() -> Result<Self, String> {
         Ok(Self {
             client: YfClient::builder()
-                .user_agent("Mozilla/5.0")
-                .timeout(std::time::Duration::from_secs(25))
+                .user_agent(DESKTOP_USER_AGENT)
+                .timeout(REQUEST_TIMEOUT)
                 .build()
                 .map_err(|_| "Could not initialize Yahoo client.")?,
             http: reqwest::Client::builder()
-                .user_agent("Mozilla/5.0")
-                .timeout(std::time::Duration::from_secs(25))
+                .user_agent(DESKTOP_USER_AGENT)
+                .timeout(REQUEST_TIMEOUT)
                 .build()
                 .map_err(|_| "Yahoo transport unavailable.")?,
         })
@@ -52,7 +57,7 @@ impl Yahoo {
                 .base_chart(url("/yahoo/chart/")?)
                 .base_quote_api(url("/yahoo/quoteSummary/")?)
                 .base_timeseries(url("/yahoo/timeseries/")?)
-                .timeout(std::time::Duration::from_secs(25))
+                .timeout(REQUEST_TIMEOUT)
                 .build()
                 .map_err(|_| "Could not initialize Yahoo client.")?,
             http: reqwest::Client::new(),
