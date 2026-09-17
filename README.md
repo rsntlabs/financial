@@ -40,8 +40,9 @@ An application-level `AllowAnyOrigin` setting only adds an
 cannot add the header to Yahoo's responses, so setting it on this dashboard (or
 its static host) would not make direct Yahoo requests succeed. A server-side
 proxy can call Yahoo without browser CORS enforcement and expose its own CORS
-policy, but an unrestricted financial-data proxy should not be deployed without
-authentication and rate limiting.
+policy. The optional backend below allows API requests from any origin so a
+single static page can use it; protect public deployments with authentication
+and rate limiting.
 
 The native service remains available for separate API consumers:
 

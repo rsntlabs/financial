@@ -8,6 +8,10 @@ Adding `Access-Control-Allow-Origin: *` to the dashboard's own responses would
 not alter Yahoo's response headers. If Yahoo disallows the deployed origin, use
 a controlled server-side proxy rather than expecting a worker or static-host
 CORS setting to override the upstream policy.
+The optional native backend performs provider requests server-side and allows
+API calls from any static-page origin. A deployment using that path must point
+requests at `/api/financials` and `/api/prices`; the default WASM worker path
+remains direct-to-provider.
 See the [root README](../README.md) for startup and static hosting.
 
 ## Data and keys
