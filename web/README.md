@@ -1,17 +1,11 @@
 # Browser dashboard
 
-React calls Rust WASM for both acquisition and analysis. Acquisition runs in a
-dedicated Web Worker; `yfinance-rs` and `edgar-rs` use reqwest's Fetch transport
-there. The provider chain tries Yahoo, SEC EDGAR, then optional Alpha Vantage.
-No `/api` service is needed, and the worker does not bypass browser CORS rules.
-Adding `Access-Control-Allow-Origin: *` to the dashboard's own responses would
-not alter Yahoo's response headers. If Yahoo disallows the deployed origin, use
-a controlled server-side proxy rather than expecting a worker or static-host
-CORS setting to override the upstream policy.
-The optional native backend performs provider requests server-side and allows
-API calls from any static-page origin. A deployment using that path must point
-requests at `/api/financials` and `/api/prices`; the default WASM worker path
-remains direct-to-provider.
+React calls `/api/financials` and `/api/prices` for acquisition and uses Rust
+WASM for local analysis. The Rust backend runs `yfinance-rs` and `edgar-rs`, and
+tries Yahoo, SEC EDGAR, then optional Alpha Vantage. Keeping provider requests
+server-side avoids upstream browser CORS restrictions. The API permits requests
+from any static-page origin; protect public deployments with authentication and
+rate limiting.
 See the [root README](../README.md) for startup and static hosting.
 
 ## Data and keys
@@ -21,10 +15,9 @@ for the tab, or (when explicitly selected) in localStorage. WASM sends the key
 only to Alpha Vantage when filling gaps. It is never included in Yahoo/SEC
 requests or financial/price snapshots. API keys must not be build variables.
 
-`npm run wasm` builds acquisition and analysis into one module. `npm run dev`
-serves the UI; `npm run build` also regenerates WASM for production. No proxy or
-provider URL is configured. Yahoo cookies are managed by the browser, and Fetch
-uses credentials for Yahoo requests. SEC uses the browser's User-Agent.
+`npm run wasm` builds the analysis module. `npm run dev` serves the UI; `npm run
+build` also regenerates WASM for production. The UI uses same-origin `/api`
+paths, so development requires a backend or a dev proxy for those routes.
 
 ## Cache
 
@@ -71,8 +64,8 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-Browser tests intercept upstream Yahoo, SEC and Alpha URLs and run the actual
-WASM clients and analysis. They reject `/api` calls and cover authentication,
-retries, fallback, key handling, provenance, statements/CSV, cache reuse, failed
-refreshes, full price history, delayed responses and cache-clear races. No live
-provider quota is consumed.
+Browser tests intercept `/api` and run the actual WASM analysis. They reject any
+direct browser request to Yahoo, SEC or Alpha and cover API payloads, key
+handling, provenance, statements/CSV, cache reuse, failed refreshes, full price
+history, delayed responses and cache-clear races. Rust tests cover provider
+authentication, retries and fallback. No live provider quota is consumed.

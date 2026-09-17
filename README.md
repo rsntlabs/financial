@@ -1,8 +1,8 @@
 # Financials dashboard
 
-A React dashboard with Rust WASM data acquisition and analysis. The browser
-calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directly. Statements
-and daily prices stay in IndexedDB, with sources preserved per metric and date.
+A React dashboard with a Rust provider API and WASM analysis. The backend calls
+**Yahoo Finance → SEC EDGAR → optional Alpha Vantage**. Statements and daily
+prices stay in IndexedDB, with sources preserved per metric and date.
 Charts and tables cover 5 or 10 fiscal years, cash generation, margins and daily
 prices, with CSV export.
 
@@ -16,24 +16,26 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cd web
 npm ci
 npm run build
-npm run preview
+cd ..
+SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
+  cargo run -p financial-providers --features server
 ```
 
-Open the preview URL. For development, run `npm run wasm` then `npm run dev`.
+Open the backend URL. For development, run the backend and then `npm run wasm`
+and `npm run dev`; Vite proxies `/api` to `127.0.0.1:3001`.
 Search without a key; **Data settings** accepts an optional Alpha Vantage key
-for gaps. Only Alpha Vantage receives that key, directly from browser WASM.
+for gaps. The browser sends the key to the backend, which sends it only to Alpha
+Vantage.
 
 ## Deployment
 
-Serve `web/dist` on any static host, including GitHub Pages. No provider server
-or `VITE_PROVIDER_URL` is required. `BASE_PATH` configures a hosting subdirectory;
-the Pages workflow supplies it automatically.
+Serve `web/dist` through the provider server, or configure a static host to
+forward `/api/*` to it. `BASE_PATH` configures a hosting subdirectory.
 
-Provider requests use browser Fetch through Rust WASM in a dedicated Web Worker,
-so authentication and response parsing do not block the UI thread. Workers have
-the same origin and CORS enforcement as the page: this architecture does not
-bypass an upstream CORS policy. Saved reports remain readable when providers are
-unavailable.
+The static dashboard sends acquisition requests to `/api/financials` and
+`/api/prices`; the Rust backend calls the upstream providers. Financial analysis
+continues to run locally in WASM. Saved reports remain readable when the backend
+or providers are unavailable.
 
 An application-level `AllowAnyOrigin` setting only adds an
 `Access-Control-Allow-Origin` header to responses served by that application. It
@@ -44,7 +46,7 @@ policy. The optional backend below allows API requests from any origin so a
 single static page can use it; protect public deployments with authentication
 and rate limiting.
 
-The native service remains available for separate API consumers:
+Run the backend and static dashboard together with:
 
 ```sh
 SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
@@ -53,7 +55,7 @@ SEC_USER_AGENT='YourApp/1.0 your-real-contact@example.org' \
 
 Native builds need OpenSSL development headers and pkg-config on Linux.
 `BIND_ADDR` defaults to `127.0.0.1:3001`, and `WEB_DIST` to `web/dist`.
-The dashboard uses its browser providers even when served by this service.
+The dashboard uses the API routes served by this service.
 
 See [provider architecture](docs/providers.md), [web notes](web/README.md), and
 [local crate patches](vendor/README.md).
