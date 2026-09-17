@@ -86,7 +86,9 @@ summarized in report warnings. Legacy Alpha-only cached payloads still parse.
 
 `BrowserProviders.financials(ticker, apiKey, years, endYear)` and
 `BrowserProviders.prices(ticker, apiKey)` return promises of normalized JSON.
-One instance per tab retains Yahoo authentication and SEC caches. Alpha keys
+The UI invokes them through a dedicated module Web Worker, keeping provider
+fetching and parsing off the main thread. One instance per worker retains Yahoo
+authentication and SEC caches. Alpha keys
 are validated and retained only during each call. Providers have a 75-second
 budget each, including price fallback.
 
@@ -96,7 +98,8 @@ Fetch implementation. Yahoo requests include credentials; the browser stores
 cookies, while Rust acquires and refreshes crumbs. No JavaScript reads
 `Set-Cookie` or writes `Cookie`/`User-Agent` headers. Timers and cache timestamps
 use browser-compatible implementations. See [patch notes](../vendor/README.md).
-CORS is left to the browser; there is no proxy or opaque `no-cors` response path.
+CORS is left to the browser and applies equally inside the worker; there is no
+proxy or opaque `no-cors` response path.
 
 ## Optional native HTTP API
 
