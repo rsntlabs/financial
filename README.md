@@ -16,7 +16,9 @@ usable), and ranks structures — long calls or puts, debit and credit verticals
 iron condors, straddles — by expected profit, probability of profit and how
 tradeable the quotes are. The direction comes from the company's own
 fundamentals and its price history; the volatility view from implied against
-realized. Chains are quoted intraday and are never saved to the browser. It is
+realized. Every contract shows its working: the inputs, d₁ and d₂, and each
+Greek's formula with this contract's numbers substituted into it beside the
+result. Chains are quoted intraday and are never saved to the browser. It is
 model output from end-of-day data, not investment advice.
 
 ## Run locally

@@ -198,8 +198,12 @@ test("failed financial and price refreshes retain the saved snapshot", async ({
   await search(page);
   await page.unroute(STATEMENTS);
   await page.unroute(CHART);
-  await page.route(STATEMENTS, (r) => r.fulfill({ status: HTTP.NOT_FOUND, body: "" }));
-  await page.route(CHART, (r) => r.fulfill({ status: HTTP.NOT_FOUND, body: "" }));
+  await page.route(STATEMENTS, (r) =>
+    r.fulfill({ status: HTTP.NOT_FOUND, body: "" }),
+  );
+  await page.route(CHART, (r) =>
+    r.fulfill({ status: HTTP.NOT_FOUND, body: "" }),
+  );
   await page
     .getByRole("button", { name: "Refresh price", exact: true })
     .click();
@@ -276,7 +280,9 @@ test("missing data is a gap, empty upstream responses are not saved", async ({
   page,
 }) => {
   await stub(page);
-  await routeStatements(page, (r) => r.fulfill({ json: timeseries({ metrics: {} }) }));
+  await routeStatements(page, (r) =>
+    r.fulfill({ json: timeseries({ metrics: {} }) }),
+  );
   await page.goto("./");
   await page.getByLabel("Ticker symbol", { exact: true }).fill("TEST");
   await page.getByRole("button", { name: "Explore financials" }).click();
@@ -474,7 +480,9 @@ test("options outlook downloads the chain only on request and ranks structures f
   // A live chain is never fetched until it is asked for.
   expect(calls).toEqual(["financials", "prices"]);
 
-  await page.getByRole("button", { name: "Analyze options", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Analyze options", exact: true })
+    .click();
   await expect(page.getByText("TEST view")).toBeVisible({ timeout: 20000 });
   expect(calls).toEqual(["financials", "prices", "options"]);
 
@@ -484,6 +492,30 @@ test("options outlook downloads the chain only on request and ranks structures f
   await expect(recommendation.getByText("Probability of profit")).toBeVisible();
   await expect(recommendation.getByText(/Net position/)).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Gamma" })).toBeVisible();
+
+  // The Greeks are shown with the formula and the substituted values behind
+  // them, for the leg the recommendation actually uses.
+  const calculation = page.locator(".option-calculation");
+  await expect(
+    calculation.getByRole("heading", { name: "How the Greeks are calculated" }),
+  ).toBeVisible();
+  await expect(calculation.getByText("d₁", { exact: true })).toBeVisible();
+  await expect(
+    calculation.getByText("Δ = e^(−q · T) · N(d₁)", { exact: true }),
+  ).toBeVisible();
+  for (const greek of [
+    "Delta (Δ)",
+    "Gamma (Γ)",
+    "Theta (Θ)",
+    "Vega (ν)",
+    "Rho (ρ)",
+  ])
+    await expect(calculation.getByText(greek, { exact: true })).toBeVisible();
+  const delta = calculation.locator("tr", {
+    has: page.getByText("Delta (Δ)", { exact: true }),
+  });
+  // The substituted line carries this contract's own numbers, not symbols.
+  await expect(delta).toContainText(/\d+\.\d{4} · \d+\.\d{4}/);
   await expect(page.getByText(/Model assumptions & limits/)).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
   expect(errors).toEqual([]);

@@ -65,6 +65,12 @@ the chain (see [provider architecture](../docs/providers.md)). Contracts whose
 implied volatility the provider does not supply, or quotes outside a plausible
 range, are re-solved from the mid price and labeled as such in the table.
 
+The calculation card shows the derivation for any recommended leg or ranked
+contract: the six inputs, the intermediate terms (d₁, d₂, N(d₁), N(d₂), φ(d₁),
+the carry and discount factors), then delta, gamma, theta, vega and rho, each
+with its formula, the same formula carrying this contract's numbers, the result
+and its unit. Greeks are per share; one contract is 100 of them.
+
 ## Checks
 
 ```sh

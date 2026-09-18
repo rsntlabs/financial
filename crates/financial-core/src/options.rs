@@ -9,8 +9,8 @@
 //! every number is a model output from the stated assumptions, and the
 //! assumptions travel with the result.
 use crate::greeks::{
-    implied_volatility, norm_pdf, price, probability_above, probability_between, Greeks, Kind,
-    CONTRACT_MULTIPLIER, DAYS_PER_YEAR,
+    implied_volatility, norm_pdf, price, probability_above, probability_between, workings, Greeks,
+    Kind, Workings, CONTRACT_MULTIPLIER, DAYS_PER_YEAR,
 };
 use crate::{Point, Report};
 use chrono::NaiveDate;
@@ -246,6 +246,8 @@ pub struct Candidate {
     pub implied_volatility: f64,
     pub implied_source: &'static str,
     pub greeks: Greeks,
+    /// The Black-Scholes derivation behind those Greeks, shown in the panel.
+    pub working: Option<Workings>,
     /// Model value under the forecast volatility, per share.
     pub model_value: f64,
     /// Model value minus mid, as a share of the mid.
@@ -268,6 +270,7 @@ pub struct Leg {
     pub mid: f64,
     pub implied_volatility: f64,
     pub greeks: Greeks,
+    pub working: Option<Workings>,
     pub open_interest: Option<f64>,
     pub spread_share: Option<f64>,
 }
@@ -291,6 +294,7 @@ pub struct Strategy {
     pub net_gamma: f64,
     pub net_theta: f64,
     pub net_vega: f64,
+    pub net_rho: f64,
     pub score: f64,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -605,6 +609,15 @@ fn candidates(
                 implied_volatility: sigma,
                 implied_source: source,
                 greeks,
+                working: workings(
+                    quote.kind,
+                    chain.spot,
+                    quote.strike,
+                    market.rate,
+                    market.dividend_yield,
+                    sigma,
+                    market.years,
+                ),
                 model_value: model.value,
                 edge,
                 liquidity,
@@ -663,6 +676,7 @@ fn leg(action: &'static str, candidate: &Candidate, contracts: u32) -> Leg {
         mid: candidate.mid,
         implied_volatility: candidate.implied_volatility,
         greeks: candidate.greeks,
+        working: candidate.working.clone(),
         open_interest: candidate.open_interest,
         spread_share: candidate.spread_share,
     }
@@ -815,6 +829,7 @@ fn evaluate(
         net_gamma: net(|g| g.gamma),
         net_theta: net(|g| g.theta),
         net_vega: net(|g| g.vega),
+        net_rho: net(|g| g.rho),
         score: (0.45 * (0.5 + 0.5 * squash(expected_profit / capital_at_risk, 0.25))
             + 0.3 * probability_of_profit
             + 0.25 * liquidity)
@@ -1365,6 +1380,26 @@ mod tests {
             .iter()
             .any(|l| l.action == "buy" && l.kind == Kind::Call));
         assert!(outlook.candidates.iter().any(|c| c.edge > 0.0));
+        // Each recommended leg carries the derivation behind its own Greeks.
+        for leg in &outlook.recommendation.legs {
+            let working = leg
+                .working
+                .as_ref()
+                .expect("a live contract shows its working");
+            assert_eq!(working.inputs.spot, outlook.spot);
+            assert_eq!(working.inputs.strike, leg.strike);
+            assert_eq!(working.inputs.sigma, leg.implied_volatility);
+            let shown = |symbol: &str| {
+                working
+                    .greeks
+                    .iter()
+                    .find(|g| g.symbol.starts_with(symbol))
+                    .map(|g| g.value)
+            };
+            assert_eq!(shown("Delta"), Some(leg.greeks.delta));
+            assert_eq!(shown("Vega"), Some(leg.greeks.vega));
+            assert_eq!(shown("Rho"), Some(leg.greeks.rho));
+        }
         assert!(!outlook.candidates.is_empty() && outlook.candidates.len() <= CANDIDATE_LIMIT);
         // Every candidate's Greeks must be self-consistent with its own quote.
         for candidate in &outlook.candidates {
