@@ -9,6 +9,16 @@ IndexedDB, with sources preserved per metric and date. Charts and tables cover
 reliably covers only about 3 years), cash generation, margins and daily
 prices, with CSV export.
 
+The **Options** tab adds a Greeks-driven outlook: on request it downloads the
+live Yahoo option chain nearest a chosen horizon, prices every contract with
+Black-Scholes-Merton (re-solving implied volatility when the quoted one is not
+usable), and ranks structures — long calls or puts, debit and credit verticals,
+iron condors, straddles — by expected profit, probability of profit and how
+tradeable the quotes are. The direction comes from the company's own
+fundamentals and its price history; the volatility view from implied against
+realized. Chains are quoted intraday and are never saved to the browser. It is
+model output from end-of-day data, not investment advice.
+
 ## Run locally
 
 Requires Rust 1.91+, the WASM target, wasm-bindgen-cli 0.2.126 and Node 22.12+.

@@ -1,0 +1,499 @@
+import { useState } from "react";
+import { Activity, CircleAlert, Sigma, TrendingUp } from "lucide-react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Badge } from "./ui/badge";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Alert, AlertDescription } from "./ui/alert";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+import {
+  DEFAULT_HORIZON_DAYS,
+  DEFAULT_RISK_FREE_RATE,
+  loadOutlook,
+} from "@/lib/options";
+import { number, percent } from "@/lib/format";
+import type {
+  Nullable,
+  OptionCandidate,
+  OptionStrategy,
+  OptionsOutlook,
+  Report,
+} from "@/lib/types";
+
+const HORIZONS = [14, 30, 45, 90, 180];
+const money = (value: Nullable, digits = 2) => number(value, digits);
+const signed = (value: number, digits = 2) =>
+  `${value > 0 ? "+" : ""}${number(value, digits)}`;
+const cash = (value: Nullable) =>
+  value === null
+    ? "Unlimited"
+    : `${value < 0 ? "−" : ""}${number(Math.abs(value), 0)}`;
+const contractName = (contract: string) => contract || "—";
+
+function Stat({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="option-stat">
+      <span className="option-stat-label">{label}</span>
+      <span className="option-stat-value">{value}</span>
+      <span className="option-stat-detail">{detail}</span>
+    </div>
+  );
+}
+
+function Legs({
+  strategy,
+  currency,
+}: {
+  strategy: OptionStrategy;
+  currency: string;
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Leg</TableHead>
+          <TableHead className="text-right">Strike</TableHead>
+          <TableHead className="text-right">Mid</TableHead>
+          <TableHead className="text-right">Delta</TableHead>
+          <TableHead className="text-right">Theta</TableHead>
+          <TableHead className="text-right">Vega</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {strategy.legs.map((leg) => (
+          <TableRow key={`${leg.action}-${leg.contract}`}>
+            <TableCell>
+              <span className={leg.action === "buy" ? "leg-buy" : "leg-sell"}>
+                {leg.action === "buy" ? "Buy" : "Sell"}
+              </span>{" "}
+              {leg.contracts} × {leg.kind} {money(leg.strike)} ·{" "}
+              {leg.expiration}
+              <div className="footnote">
+                {contractName(leg.contract)} · IV{" "}
+                {percent(leg.impliedVolatility)}
+              </div>
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {money(leg.strike)}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {money(leg.mid)}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {signed(leg.greeks.delta)}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {signed(leg.greeks.theta)}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {money(leg.greeks.vega)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+      <TableBody>
+        <TableRow className="subtotal">
+          <TableCell>
+            Net position ({currency}, one contract = 100 shares)
+          </TableCell>
+          <TableCell className="text-right" colSpan={2}>
+            {strategy.netDebit >= 0
+              ? `${cash(strategy.netDebit)} debit`
+              : `${cash(-strategy.netDebit)} credit`}
+          </TableCell>
+          <TableCell className="text-right font-mono tabular-nums">
+            {signed(strategy.netDelta, 1)}
+          </TableCell>
+          <TableCell className="text-right font-mono tabular-nums">
+            {signed(strategy.netTheta, 1)}
+          </TableCell>
+          <TableCell className="text-right font-mono tabular-nums">
+            {signed(strategy.netVega, 1)}
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  );
+}
+
+function Candidates({ rows }: { rows: OptionCandidate[] }) {
+  return (
+    <Card className="overflow-hidden p-0">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Contract</TableHead>
+            <TableHead className="text-right">Strike</TableHead>
+            <TableHead className="text-right">Mid</TableHead>
+            <TableHead className="text-right">Model</TableHead>
+            <TableHead className="text-right">Edge</TableHead>
+            <TableHead className="text-right">IV</TableHead>
+            <TableHead className="text-right">Delta</TableHead>
+            <TableHead className="text-right">Gamma</TableHead>
+            <TableHead className="text-right">Theta</TableHead>
+            <TableHead className="text-right">Vega</TableHead>
+            <TableHead className="text-right">P(ITM)</TableHead>
+            <TableHead className="text-right">Score</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.contract}>
+              <TableCell>
+                {row.kind === "call" ? "Call" : "Put"} · {row.expiration}
+                <div className="footnote">
+                  {contractName(row.contract)} · IV {row.impliedSource}
+                </div>
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {money(row.strike)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {money(row.mid)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {money(row.modelValue)}
+              </TableCell>
+              <TableCell
+                className={`text-right font-mono tabular-nums ${row.edge < 0 ? "negative" : ""}`}
+              >
+                {percent(row.edge)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {percent(row.impliedVolatility)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {signed(row.greeks.delta)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {number(row.greeks.gamma, 4)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {signed(row.greeks.theta)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {money(row.greeks.vega)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {percent(row.probabilityItm)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {number(row.score * 100, 0)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}
+
+function StrategyCard({
+  strategy,
+  currency,
+  primary = false,
+}: {
+  strategy: OptionStrategy;
+  currency: string;
+  primary?: boolean;
+}) {
+  return (
+    <Card className={primary ? "option-strategy primary" : "option-strategy"}>
+      <div className="option-strategy-heading">
+        <div>
+          <h3>{strategy.name}</h3>
+          <p>{strategy.summary}</p>
+        </div>
+        <Badge variant={primary ? "default" : "outline"}>
+          {strategy.direction}
+        </Badge>
+      </div>
+      {primary && <p className="option-rationale">{strategy.rationale}</p>}
+      <div className="option-stats">
+        <Stat
+          label={strategy.netDebit >= 0 ? "Net debit" : "Net credit"}
+          value={cash(Math.abs(strategy.netDebit))}
+          detail={`${currency} per spread`}
+        />
+        <Stat
+          label="Max profit"
+          value={cash(strategy.maxProfit)}
+          detail="At expiry, before costs"
+        />
+        <Stat
+          label="Max loss"
+          value={cash(strategy.maxLoss)}
+          detail="At expiry, before costs"
+        />
+        <Stat
+          label="Probability of profit"
+          value={percent(strategy.probabilityOfProfit)}
+          detail="Model lognormal, at expiry"
+        />
+        <Stat
+          label="Expected profit"
+          value={cash(strategy.expectedProfit)}
+          detail={`${percent(strategy.expectedProfit / strategy.capitalAtRisk)} of capital at risk`}
+        />
+        <Stat
+          label="Breakeven"
+          value={
+            strategy.breakevens.length
+              ? strategy.breakevens.map((b) => money(b)).join(" / ")
+              : "—"
+          }
+          detail="Underlying price at expiry"
+        />
+      </div>
+      {primary && <Legs strategy={strategy} currency={currency} />}
+    </Card>
+  );
+}
+
+export function OptionsOutlookPanel({
+  report,
+  apiKey,
+}: {
+  report: Report;
+  apiKey: string;
+}) {
+  const [outlook, setOutlook] = useState<OptionsOutlook | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [horizon, setHorizon] = useState(DEFAULT_HORIZON_DAYS);
+  const [rate, setRate] = useState(String(DEFAULT_RISK_FREE_RATE * 100));
+
+  async function run() {
+    setBusy(true);
+    setError("");
+    try {
+      setOutlook(
+        await loadOutlook(report, apiKey, {
+          horizonDays: horizon,
+          riskFreeRate: Number(rate) / 100,
+        }),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const currency = outlook?.currency || report.currency || "Quote currency";
+  return (
+    <section className="options-panel" aria-label="Options outlook">
+      <div className="statement-heading">
+        <div>
+          <h2>Options outlook</h2>
+          <p>
+            Fundamentals and price history set the direction; Black-Scholes
+            Greeks on the live chain pick the structure. Model output, not
+            investment advice.
+          </p>
+        </div>
+        <div className="option-controls">
+          <label htmlFor="option-horizon" className="sr-only">
+            Horizon in days
+          </label>
+          <select
+            id="option-horizon"
+            value={horizon}
+            onChange={(e) => setHorizon(Number(e.target.value))}
+          >
+            {HORIZONS.map((days) => (
+              <option key={days} value={days}>
+                {days} days
+              </option>
+            ))}
+          </select>
+          <label htmlFor="option-rate">Risk-free %</label>
+          <Input
+            id="option-rate"
+            type="number"
+            min={0}
+            max={25}
+            step={0.25}
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+          />
+          <Button size="sm" disabled={busy} onClick={() => void run()}>
+            {busy
+              ? "Analyzing…"
+              : outlook
+                ? "Re-run analysis"
+                : "Analyze options"}
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <Alert variant="destructive" className="dashboard-alert">
+          <CircleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {busy && !outlook ? (
+        <div role="status" aria-label="Analyzing the option chain">
+          <Skeleton className="h-72 w-full rounded-xl" />
+        </div>
+      ) : null}
+      {!outlook && !busy ? (
+        <Card className="reading-card option-intro">
+          <div className="reading-icon">
+            <Sigma size={21} />
+          </div>
+          <h2>Bring the Greeks into the picture.</h2>
+          <p>
+            The chain is quoted live and is never saved to this browser, so it
+            is downloaded only when you ask for it. The analysis re-solves every
+            implied volatility it cannot trust, prices delta, gamma, theta, vega
+            and rho for each contract, and ranks structures by expected profit,
+            probability of profit and how tradeable the quotes are.
+          </p>
+        </Card>
+      ) : null}
+      {outlook && (
+        <>
+          <div className="option-summary">
+            <Card className="option-signal">
+              <div className="option-strategy-heading">
+                <div>
+                  <h3>
+                    <TrendingUp size={18} aria-hidden="true" /> {outlook.ticker}{" "}
+                    view
+                  </h3>
+                  <p>
+                    {outlook.signal.direction} ·{" "}
+                    {percent(outlook.signal.conviction)} conviction ·{" "}
+                    {outlook.volatility.regime} volatility
+                  </p>
+                </div>
+                <Badge variant="outline">{money(outlook.spot)}</Badge>
+              </div>
+              <div className="option-stats">
+                <Stat
+                  label="Expiration"
+                  value={outlook.forecast.expiration}
+                  detail={`${number(outlook.forecast.daysToExpiry, 0)} days from ${outlook.asOf}`}
+                />
+                <Stat
+                  label="Model target"
+                  value={money(outlook.forecast.target)}
+                  detail={`${signed(outlook.forecast.drift * 100, 1)}% annual drift from the view`}
+                />
+                <Stat
+                  label="Expected move"
+                  value={`± ${money(outlook.forecast.expectedMove)}`}
+                  detail={`${percent(outlook.forecast.expectedMovePercent)} · ${money(outlook.forecast.lower)} to ${money(outlook.forecast.upper)}`}
+                />
+                <Stat
+                  label="Implied volatility"
+                  value={percent(outlook.volatility.impliedAtm)}
+                  detail={`At the money · forecast ${percent(outlook.volatility.forecast)}`}
+                />
+                <Stat
+                  label="Realized volatility"
+                  value={percent(outlook.volatility.realized30)}
+                  detail={`30 sessions · 90 sessions ${percent(outlook.volatility.realized90)}`}
+                />
+                <Stat
+                  label="Variance premium"
+                  value={percent(outlook.volatility.variancePremium)}
+                  detail="Implied less realized"
+                />
+              </div>
+              <div className="option-drivers">
+                {outlook.signal.drivers.map((driver) => (
+                  <div key={driver.label} className="option-driver">
+                    <span>{driver.label}</span>
+                    <div
+                      className="option-driver-bar"
+                      role="img"
+                      aria-label={`${driver.label}: ${driver.detail}, score ${driver.score.toFixed(2)}`}
+                    >
+                      <span
+                        className={driver.score < 0 ? "negative" : "positive"}
+                        style={{
+                          width: `${Math.min(Math.abs(driver.score), 1) * 50}%`,
+                          [driver.score < 0 ? "right" : "left"]: "50%",
+                        }}
+                      />
+                    </div>
+                    <span className="footnote">{driver.detail}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <StrategyCard
+              strategy={outlook.recommendation}
+              currency={currency}
+              primary
+            />
+          </div>
+          {outlook.alternatives.length > 0 && (
+            <>
+              <div className="section-caption">
+                <span>ALTERNATIVES</span>
+                <span>Same expiration, same view</span>
+              </div>
+              <div className="option-alternatives">
+                {outlook.alternatives.map((strategy) => (
+                  <StrategyCard
+                    key={strategy.name}
+                    strategy={strategy}
+                    currency={currency}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          <div className="section-caption">
+            <span>CONTRACTS</span>
+            <span>
+              <Activity size={13} aria-hidden="true" /> Ranked by edge,
+              alignment and liquidity
+            </span>
+          </div>
+          <Candidates rows={outlook.candidates} />
+          <details className="data-notes">
+            <summary>
+              <CircleAlert size={15} />
+              Model assumptions & limits{" "}
+              <Badge variant="secondary">{outlook.warnings.length} notes</Badge>
+            </summary>
+            <div>
+              <p>
+                Greeks are Black-Scholes-Merton values computed here from the
+                quoted mid price, not provider data: delta and gamma per share,
+                vega per volatility point, theta per calendar day, all scaled by
+                100 shares in the net position row. Probabilities assume a
+                lognormal underlying with the stated drift and forecast
+                volatility, hold only at expiry, and ignore commissions,
+                assignment and early exercise.
+              </p>
+              {outlook.warnings.map((warning, i) => (
+                <p key={i}>{warning}</p>
+              ))}
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}

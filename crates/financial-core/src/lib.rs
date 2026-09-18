@@ -2,15 +2,19 @@
 //! as wasm32-unknown-unknown; provider transport uses browser fetch on WASM.
 pub mod alpha;
 pub mod dataset;
+pub mod greeks;
+pub mod options;
 pub mod provider;
 pub mod statements;
 use chrono::{Datelike, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+// Deserialize as well as Serialize: the options engine takes a report the
+// dashboard has already analyzed, rather than repeating the statement work.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Report {
     pub ticker: String,
     pub name: String,
@@ -22,8 +26,8 @@ pub struct Report {
     pub fetched_at: String,
     pub stream_names: Vec<String>,
 }
-#[derive(Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Point {
     pub year: i32,
     pub end: Option<String>,
@@ -42,13 +46,14 @@ pub struct Point {
     pub net_margin: Option<f64>,
     pub streams: BTreeMap<String, f64>,
 }
-#[derive(Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Section {
     pub name: String,
     pub rows: Vec<StatementRow>,
 }
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct StatementRow {
     pub label: String,
     pub subtotal: bool,
@@ -102,6 +107,17 @@ pub fn analyze_financials(
         serde_json::from_str(payload).map_err(|_| "The data response was not valid JSON.")?;
     let report = analyze(ticker, &payload, years, end_year)?;
     serde_json::to_string(&report).map_err(|e| e.to_string())
+}
+
+/// Ranks option structures for a ticker from an analyzed report, its daily
+/// prices and one option chain. `payload` is
+/// `{ report, prices, chain, settings }`; see `options::Input`.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn analyze_options(payload: &str) -> Result<String, String> {
+    let input: options::Input = serde_json::from_str(payload)
+        .map_err(|_| "The options request was not valid JSON.".to_string())?;
+    let outlook = options::recommend(&input)?;
+    serde_json::to_string(&outlook).map_err(|e| e.to_string())
 }
 
 pub fn analyze(

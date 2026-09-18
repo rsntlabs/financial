@@ -42,6 +42,14 @@ impl BrowserProviders {
         serde_json::to_string(&prices).map_err(|_| "Invalid price data.".into())
     }
 
+    /// The option chain nearest `horizon_days`, for the Greeks-driven options
+    /// outlook. Yahoo is the only provider that quotes contracts, so there is
+    /// no fallback chain and no API key involved.
+    pub async fn options(&self, ticker: String, horizon_days: u32) -> Result<String, String> {
+        let chain = self.yahoo.option_chain(&ticker, horizon_days).await?;
+        serde_json::to_string(&chain).map_err(|_| "Invalid option chain data.".into())
+    }
+
     /// Every SEC-registered ticker and company name, for the search dropdown.
     pub async fn tickers(&self) -> Result<String, String> {
         let tickers = self.edgar.tickers().await?;

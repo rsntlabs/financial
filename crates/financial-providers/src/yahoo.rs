@@ -1,7 +1,9 @@
-use crate::{Needs, PricePoint, Provider, Request};
+use crate::{options, Needs, PricePoint, Provider, Request};
 use async_trait::async_trait;
+use serde_json::Value;
 use std::time::Duration;
 use yfinance_core::dataset::Dataset;
+use yfinance_core::options::Chain;
 use yfinance_rs::{FundamentalsBuilder, HistoryBuilder, Money, Range, YfClient};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,6 +17,8 @@ pub struct Yahoo {
     http: reqwest::Client,
     #[cfg(target_arch = "wasm32")]
     timeseries_base: String,
+    #[cfg(target_arch = "wasm32")]
+    options_base: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -35,6 +39,12 @@ impl Yahoo {
     }
     async fn extended_statement(&self, ticker: &str) -> Result<Dataset, String> {
         extended_statement_native(&self.http, ticker).await
+    }
+    async fn options_json(&self, ticker: &str, date: Option<i64>) -> Result<Value, String> {
+        let (cookie, crumb) = session(&self.http).await?;
+        let mut url = options_url(OPTIONS_BASE, ticker, date)?;
+        url.query_pairs_mut().append_pair("crumb", &crumb);
+        json(self.http.get(url).header(reqwest::header::COOKIE, cookie)).await
     }
 }
 
@@ -62,10 +72,53 @@ impl Yahoo {
                 .map_err(|_| "Could not initialize Yahoo client.")?,
             http: reqwest::Client::new(),
             timeseries_base: format!("{proxy_base}/yahoo/timeseries"),
+            options_base: format!("{proxy_base}/yahoo/options"),
         })
     }
     async fn extended_statement(&self, ticker: &str) -> Result<Dataset, String> {
         extended_statement_proxy(&self.http, &self.timeseries_base, ticker).await
+    }
+    async fn options_json(&self, ticker: &str, date: Option<i64>) -> Result<Value, String> {
+        json(
+            self.http
+                .get(options_url(&self.options_base, ticker, date)?),
+        )
+        .await
+    }
+}
+
+impl Yahoo {
+    /// The option chain for the expiration closest to `horizon_days`, with the
+    /// underlying price and every listed expiration date. Yahoo answers the
+    /// nearest expiration by default, so a second request is made only when the
+    /// horizon points somewhere else.
+    pub async fn option_chain(&self, ticker: &str, horizon_days: u32) -> Result<Chain, String> {
+        let ticker = yfinance_core::normalize_ticker(ticker)?;
+        let body = self.options_json(&ticker, None).await?;
+        let mut chain = options::normalize(&body, &ticker)?;
+        let target = options::pick_expiration(
+            &options::expiration_epochs(&body),
+            chrono::Utc::now().date_naive(),
+            horizon_days,
+        );
+        let selected = target.and_then(options::epoch_date);
+        if selected.is_some() && selected.as_deref() != chain.quotes.first().map(|q| &*q.expiration)
+        {
+            match self.options_json(&ticker, target).await {
+                Ok(body) => match options::normalize(&body, &ticker) {
+                    Ok(mut requested) => {
+                        // The first response is the only one that carries the
+                        // full expiration calendar.
+                        requested.expirations = std::mem::take(&mut chain.expirations);
+                        requested.warnings.append(&mut chain.warnings);
+                        chain = requested;
+                    }
+                    Err(error) => chain.warnings.push(error),
+                },
+                Err(error) => chain.warnings.push(error),
+            }
+        }
+        Ok(chain)
     }
 }
 
@@ -215,6 +268,33 @@ impl Provider for Yahoo {
 
 const ONE_DAY_SECONDS: i64 = 86_400;
 
+// Every Yahoo JSON request shares the same failure vocabulary; callers add
+// whatever authentication their build needs before handing the builder over.
+async fn json(request: reqwest::RequestBuilder) -> Result<Value, String> {
+    request
+        .send()
+        .await
+        .map_err(|_| "Yahoo request unavailable.")?
+        .error_for_status()
+        .map_err(|_| "Yahoo rejected the request.")?
+        .json()
+        .await
+        .map_err(|_| "Yahoo returned an unreadable response.".into())
+}
+
+// `/options/:symbol`, optionally narrowed to one expiration. Yahoo answers the
+// bare form with its nearest expiration plus every expiration date it lists.
+fn options_url(base: &str, ticker: &str, date: Option<i64>) -> Result<reqwest::Url, String> {
+    let mut url = reqwest::Url::parse(base).map_err(|_| "Invalid Yahoo options URL.")?;
+    url.path_segments_mut()
+        .map_err(|_| "Invalid Yahoo options URL.")?
+        .push(ticker);
+    if let Some(date) = date {
+        url.query_pairs_mut().append_pair("date", &date.to_string());
+    }
+    Ok(url)
+}
+
 // Every metric ID the dashboard can display, sorted and deduplicated.
 fn metric_keys() -> std::collections::BTreeSet<&'static str> {
     yfinance_core::statements::SECTIONS
@@ -247,10 +327,12 @@ fn timeseries_url(base: &str, ticker: &str) -> Result<reqwest::Url, String> {
 // yfinance-rs projects a subset of statement rows. Query the same Yahoo endpoint
 // for the dashboard's remaining metric IDs before considering another provider.
 #[cfg(not(target_arch = "wasm32"))]
-async fn extended_statement_native(
-    http: &reqwest::Client,
-    ticker: &str,
-) -> Result<Dataset, String> {
+const OPTIONS_BASE: &str = "https://query1.finance.yahoo.com/v7/finance/options";
+
+// Yahoo's authenticated endpoints need a cookie from its consent host plus a
+// crumb minted against that cookie; neither is reusable without the other.
+#[cfg(not(target_arch = "wasm32"))]
+async fn session(http: &reqwest::Client) -> Result<(String, String), String> {
     use reqwest::header::{COOKIE, SET_COOKIE};
     let response = http
         .get("https://fc.yahoo.com")
@@ -283,22 +365,23 @@ async fn extended_statement_native(
     {
         return Err("Yahoo authentication invalid.".into());
     }
+    Ok((cookie, crumb))
+}
+
+// yfinance-rs projects a subset of statement rows. Query the same Yahoo endpoint
+// for the dashboard's remaining metric IDs before considering another provider.
+#[cfg(not(target_arch = "wasm32"))]
+async fn extended_statement_native(
+    http: &reqwest::Client,
+    ticker: &str,
+) -> Result<Dataset, String> {
+    let (cookie, crumb) = session(http).await?;
     let mut url = timeseries_url(
         "https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries",
         ticker,
     )?;
     url.query_pairs_mut().append_pair("crumb", &crumb);
-    let body: serde_json::Value = http
-        .get(url)
-        .header(COOKIE, cookie)
-        .send()
-        .await
-        .map_err(|_| "Yahoo extended statements unavailable.")?
-        .error_for_status()
-        .map_err(|_| "Yahoo extended statements rejected.")?
-        .json()
-        .await
-        .map_err(|_| "Yahoo extended statements unreadable.")?;
+    let body = json(http.get(url).header(reqwest::header::COOKIE, cookie)).await?;
     normalize_timeseries(&body)
 }
 
@@ -310,17 +393,7 @@ async fn extended_statement_proxy(
     timeseries_base: &str,
     ticker: &str,
 ) -> Result<Dataset, String> {
-    let url = timeseries_url(timeseries_base, ticker)?;
-    let body: serde_json::Value = http
-        .get(url)
-        .send()
-        .await
-        .map_err(|_| "Yahoo extended statements unavailable.")?
-        .error_for_status()
-        .map_err(|_| "Yahoo extended statements rejected.")?
-        .json()
-        .await
-        .map_err(|_| "Yahoo extended statements unreadable.")?;
+    let body = json(http.get(timeseries_url(timeseries_base, ticker)?)).await?;
     normalize_timeseries(&body)
 }
 fn normalize_timeseries(body: &serde_json::Value) -> Result<Dataset, String> {

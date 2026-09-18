@@ -14,7 +14,7 @@ browser/proxy boundary.
 ## Routes
 
 - `GET /yahoo/chart/:symbol`, `/yahoo/quoteSummary/:symbol`,
-  `/yahoo/timeseries/:symbol` — proxy to the matching Yahoo Finance endpoint,
+  `/yahoo/timeseries/:symbol`, `/yahoo/options/:symbol` — proxy to the matching Yahoo Finance endpoint,
   with the Worker's own crumb and cookie injected (any client-supplied crumb
   is dropped). The browser client never fetches a real cookie or crumb of its
   own (see vendor/yfinance-rs's auth.rs patch), so there is no auth handshake
