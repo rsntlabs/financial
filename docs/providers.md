@@ -90,6 +90,14 @@ and rho shown is computed here from the quoted mid price, with the provider's
 implied volatility used only when it is a plausible number and re-solved from
 the mid otherwise.
 
+Each contract carries its own derivation. `greeks::workings` returns the inputs
+(S, K, r, q, σ, T), the shared intermediate terms (d₁, d₂, N(d₁), N(d₂), φ(d₁)
+and the carry and discount factors) and one line per Greek holding the formula,
+that formula with this contract's numbers substituted into it, the result and
+its unit. Those values come from the same code path as the pricing itself, so
+the panel shows the arithmetic the ranking actually used rather than a second
+derivation that could drift from it; the tests assert the two agree.
+
 The direction comes from the same fundamentals the dashboard already displays
 (revenue growth and its trend, net margin and its direction, free cash flow
 margin) blended with trailing price returns and the distance from a 200-session
@@ -170,8 +178,9 @@ history gaps, skipped paid calls, selective Alpha endpoint calls, unsupported
 prices, currency/fiscal-date rejection, annual/restated SEC facts, Yahoo annual
 rows and normalized analysis. Options coverage checks Black-Scholes values and
 put-call parity against published figures, implied-volatility inversion, chain
-normalization and expiration choice, and the direction, volatility regime and
-payoff arithmetic of the recommendation. Browser tests use the real WASM provider chain
+normalization and expiration choice, the shown working matching the ranked
+values term by term, and the direction, volatility regime and payoff arithmetic
+of the recommendation. Browser tests use the real WASM provider chain
 and analysis engine with intercepted Cloudflare Worker proxy responses, and
 reject any request that reaches Yahoo or SEC directly (see `web/tests/upstream.ts`).
 They do not consume any upstream API allowance. `worker/` has its own `npm test`

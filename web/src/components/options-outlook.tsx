@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { Activity, CircleAlert, Sigma, TrendingUp } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Activity,
+  CircleAlert,
+  FunctionSquare,
+  Sigma,
+  TrendingUp,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
@@ -26,6 +32,7 @@ import type {
   OptionStrategy,
   OptionsOutlook,
   Report,
+  Working,
 } from "@/lib/types";
 
 const HORIZONS = [14, 30, 45, 90, 180];
@@ -73,6 +80,7 @@ function Legs({
           <TableHead className="text-right">Delta</TableHead>
           <TableHead className="text-right">Theta</TableHead>
           <TableHead className="text-right">Vega</TableHead>
+          <TableHead className="text-right">Rho</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -104,6 +112,9 @@ function Legs({
             <TableCell className="text-right font-mono tabular-nums">
               {money(leg.greeks.vega)}
             </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {money(leg.greeks.rho)}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -125,6 +136,9 @@ function Legs({
           </TableCell>
           <TableCell className="text-right font-mono tabular-nums">
             {signed(strategy.netVega, 1)}
+          </TableCell>
+          <TableCell className="text-right font-mono tabular-nums">
+            {signed(strategy.netRho, 1)}
           </TableCell>
         </TableRow>
       </TableBody>
@@ -148,6 +162,7 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
             <TableHead className="text-right">Gamma</TableHead>
             <TableHead className="text-right">Theta</TableHead>
             <TableHead className="text-right">Vega</TableHead>
+            <TableHead className="text-right">Rho</TableHead>
             <TableHead className="text-right">P(ITM)</TableHead>
             <TableHead className="text-right">Score</TableHead>
           </TableRow>
@@ -189,6 +204,9 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
                 {money(row.greeks.vega)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {money(row.greeks.rho)}
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
                 {percent(row.probabilityItm)}
@@ -266,6 +284,117 @@ function StrategyCard({
   );
 }
 
+/**
+ * The Black-Scholes working behind one contract: the inputs, the shared
+ * intermediate terms, then each Greek's formula with this contract's numbers
+ * substituted into it. The values are the ones the ranking used — they come
+ * from the engine, not from re-deriving anything in the browser.
+ */
+function Calculation({
+  working,
+  contract,
+  choices,
+  onSelect,
+}: {
+  working: Working;
+  contract: string;
+  choices: { contract: string; label: string }[];
+  onSelect: (contract: string) => void;
+}) {
+  const { inputs } = working;
+  return (
+    <Card className="option-calculation">
+      <div className="option-strategy-heading">
+        <div>
+          <h3>
+            <FunctionSquare size={18} aria-hidden="true" /> How the Greeks are
+            calculated
+          </h3>
+          <p>
+            Black-Scholes-Merton on the quoted mid, per share of the underlying.
+          </p>
+        </div>
+        <div className="option-controls">
+          <label htmlFor="option-calculation-contract" className="sr-only">
+            Contract to show the calculation for
+          </label>
+          <select
+            id="option-calculation-contract"
+            value={contract}
+            onChange={(e) => onSelect(e.target.value)}
+          >
+            {choices.map((choice) => (
+              <option key={choice.contract} value={choice.contract}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <dl className="option-inputs">
+        {[
+          ["S — spot", money(inputs.spot)],
+          ["K — strike", money(inputs.strike)],
+          ["σ — volatility", percent(inputs.sigma)],
+          [
+            "T — time to expiry",
+            `${number(inputs.years, 4)} yr (${number(inputs.days, 0)} days)`,
+          ],
+          ["r — risk-free rate", percent(inputs.rate)],
+          ["q — dividend yield", percent(inputs.dividendYield)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd className="font-mono tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="min-w-28">Term</TableHead>
+            <TableHead>Formula</TableHead>
+            <TableHead>With this contract&rsquo;s values</TableHead>
+            <TableHead className="text-right min-w-24">Result</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {working.terms.map((term) => (
+            <TableRow key={term.symbol}>
+              <TableCell className="font-mono">{term.symbol}</TableCell>
+              <TableCell className="option-formula">{term.formula}</TableCell>
+              <TableCell className="option-formula">
+                {term.substituted}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {number(term.value, 4)}
+              </TableCell>
+            </TableRow>
+          ))}
+          {working.greeks.map((greek) => (
+            <TableRow key={greek.symbol} className="subtotal">
+              <TableCell className="font-mono">{greek.symbol}</TableCell>
+              <TableCell className="option-formula">{greek.formula}</TableCell>
+              <TableCell className="option-formula">
+                {greek.substituted}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {number(greek.value, 4)}
+                <div className="footnote">{greek.unit}</div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <p className="footnote">
+        N is the standard normal cumulative distribution and φ its density.
+        Multiply any Greek by 100 shares for one contract, and by the signed
+        quantity of each leg for the net position above.
+      </p>
+    </Card>
+  );
+}
+
 export function OptionsOutlookPanel({
   report,
   apiKey,
@@ -277,6 +406,7 @@ export function OptionsOutlookPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [horizon, setHorizon] = useState(DEFAULT_HORIZON_DAYS);
+  const [shown, setShown] = useState("");
   const [rate, setRate] = useState(String(DEFAULT_RISK_FREE_RATE * 100));
 
   async function run() {
@@ -296,6 +426,36 @@ export function OptionsOutlookPanel({
     }
   }
 
+  // Every contract whose derivation can be shown: the recommended legs first,
+  // then the ranked candidates, without repeating a contract that is both.
+  const derivations = useMemo(() => {
+    const entries = new Map<string, { label: string; working: Working }>();
+    const add = (
+      contract: string,
+      kind: string,
+      strike: number,
+      working: Working | null,
+      prefix: string,
+    ) => {
+      if (working && !entries.has(contract))
+        entries.set(contract, {
+          label: `${prefix}${kind} ${money(strike)} · ${contract}`,
+          working,
+        });
+    };
+    for (const leg of outlook?.recommendation.legs ?? [])
+      add(
+        leg.contract,
+        leg.kind,
+        leg.strike,
+        leg.working,
+        `${leg.action === "buy" ? "Long" : "Short"} `,
+      );
+    for (const row of outlook?.candidates ?? [])
+      add(row.contract, row.kind, row.strike, row.working, "");
+    return entries;
+  }, [outlook]);
+  const selected = derivations.get(shown) ?? derivations.values().next().value;
   const currency = outlook?.currency || report.currency || "Quote currency";
   return (
     <section className="options-panel" aria-label="Options outlook">
@@ -471,6 +631,21 @@ export function OptionsOutlookPanel({
             </span>
           </div>
           <Candidates rows={outlook.candidates} />
+          {selected && (
+            <Calculation
+              working={selected.working}
+              contract={
+                derivations.has(shown)
+                  ? shown
+                  : (derivations.keys().next().value ?? "")
+              }
+              choices={[...derivations].map(([contract, entry]) => ({
+                contract,
+                label: entry.label,
+              }))}
+              onSelect={setShown}
+            />
+          )}
           <details className="data-notes">
             <summary>
               <CircleAlert size={15} />

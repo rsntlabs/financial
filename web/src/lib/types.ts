@@ -67,6 +67,29 @@ export interface Greeks {
   vega: number;
   rho: number;
 }
+export interface WorkingTerm {
+  symbol: string;
+  formula: string;
+  substituted: string;
+  value: number;
+  unit: string;
+}
+export interface WorkingInputs {
+  spot: number;
+  strike: number;
+  rate: number;
+  dividendYield: number;
+  sigma: number;
+  years: number;
+  days: number;
+}
+/** The Black-Scholes derivation behind one contract's Greeks. */
+export interface Working {
+  kind: OptionKind;
+  inputs: WorkingInputs;
+  terms: WorkingTerm[];
+  greeks: WorkingTerm[];
+}
 export interface SignalDriver {
   label: string;
   detail: string;
@@ -116,6 +139,7 @@ export interface OptionCandidate {
   impliedVolatility: number;
   impliedSource: string;
   greeks: Greeks;
+  working: Working | null;
   modelValue: number;
   edge: number;
   liquidity: number;
@@ -134,6 +158,7 @@ export interface StrategyLeg {
   mid: number;
   impliedVolatility: number;
   greeks: Greeks;
+  working: Working | null;
   openInterest: Nullable;
   spreadShare: Nullable;
 }
@@ -154,6 +179,7 @@ export interface OptionStrategy {
   netGamma: number;
   netTheta: number;
   netVega: number;
+  netRho: number;
   score: number;
 }
 export interface OptionsOutlook {
