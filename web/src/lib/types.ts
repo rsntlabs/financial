@@ -56,3 +56,143 @@ export interface Report {
   streamNames: string[];
 }
 export type PointKey = Exclude<keyof Point, "year" | "end" | "streams">;
+export type OptionKind = "call" | "put";
+export type Direction = "bullish" | "neutral" | "bearish";
+export type VolRegime = "rich" | "fair" | "cheap";
+export interface Greeks {
+  value: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho: number;
+}
+export interface SignalDriver {
+  label: string;
+  detail: string;
+  score: number;
+  weight: number;
+}
+export interface OptionsSignal {
+  fundamental: Nullable;
+  momentum: Nullable;
+  composite: number;
+  direction: Direction;
+  conviction: number;
+  drivers: SignalDriver[];
+}
+export interface OptionsVolatility {
+  realized30: Nullable;
+  realized90: Nullable;
+  realized252: Nullable;
+  impliedAtm: Nullable;
+  variancePremium: Nullable;
+  forecast: number;
+  regime: VolRegime;
+}
+export interface OptionsForecast {
+  expiration: string;
+  daysToExpiry: number;
+  years: number;
+  drift: number;
+  expectedMove: number;
+  expectedMovePercent: number;
+  target: number;
+  upper: number;
+  lower: number;
+  probabilityAboveSpot: number;
+}
+export interface OptionCandidate {
+  contract: string;
+  kind: OptionKind;
+  expiration: string;
+  strike: number;
+  mid: number;
+  bid: Nullable;
+  ask: Nullable;
+  spreadShare: Nullable;
+  volume: Nullable;
+  openInterest: Nullable;
+  impliedVolatility: number;
+  impliedSource: string;
+  greeks: Greeks;
+  modelValue: number;
+  edge: number;
+  liquidity: number;
+  alignment: number;
+  score: number;
+  probabilityItm: number;
+  breakeven: number;
+}
+export interface StrategyLeg {
+  action: "buy" | "sell";
+  contracts: number;
+  contract: string;
+  kind: OptionKind;
+  expiration: string;
+  strike: number;
+  mid: number;
+  impliedVolatility: number;
+  greeks: Greeks;
+  openInterest: Nullable;
+  spreadShare: Nullable;
+}
+export interface OptionStrategy {
+  name: string;
+  summary: string;
+  rationale: string;
+  direction: Direction;
+  legs: StrategyLeg[];
+  netDebit: number;
+  maxProfit: Nullable;
+  maxLoss: Nullable;
+  capitalAtRisk: number;
+  breakevens: number[];
+  probabilityOfProfit: number;
+  expectedProfit: number;
+  netDelta: number;
+  netGamma: number;
+  netTheta: number;
+  netVega: number;
+  score: number;
+}
+export interface OptionsOutlook {
+  ticker: string;
+  name: string;
+  currency: string | null;
+  spot: number;
+  asOf: string;
+  riskFreeRate: number;
+  dividendYield: number;
+  horizonDays: number;
+  signal: OptionsSignal;
+  volatility: OptionsVolatility;
+  forecast: OptionsForecast;
+  recommendation: OptionStrategy;
+  alternatives: OptionStrategy[];
+  candidates: OptionCandidate[];
+  expirations: string[];
+  warnings: string[];
+}
+export interface OptionQuote {
+  contract: string;
+  expiration: string;
+  strike: number;
+  kind: OptionKind;
+  bid: Nullable;
+  ask: Nullable;
+  last: Nullable;
+  volume: Nullable;
+  openInterest: Nullable;
+  impliedVolatility: Nullable;
+}
+export interface OptionChain {
+  ticker: string;
+  spot: number;
+  currency: string | null;
+  fetchedAt: string;
+  dividendYield: Nullable;
+  expirations: string[];
+  quotes: OptionQuote[];
+  warnings: string[];
+}

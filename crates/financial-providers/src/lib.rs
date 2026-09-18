@@ -3,6 +3,7 @@ pub mod alpha;
 #[cfg(target_arch = "wasm32")]
 mod browser;
 pub mod edgar;
+pub mod options;
 mod runtime;
 pub mod yahoo;
 use async_trait::async_trait;

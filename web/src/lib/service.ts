@@ -1,5 +1,5 @@
 import type { BrowserProviders } from "../wasm/financial_core";
-import type { TickerEntry } from "./types";
+import type { OptionChain, TickerEntry } from "./types";
 import { loadEngine, loadOnce } from "./wasm";
 
 const YEARS_REQUESTED = 10;
@@ -46,6 +46,24 @@ export async function providerRequest<T>(
     return JSON.parse(json) as T;
   } catch (error) {
     // Rust rejects these promises with a plain string, not an Error object.
+    throw new Error(String(error));
+  }
+}
+
+/**
+ * The option chain for the expiration nearest `horizonDays`. Yahoo is the only
+ * provider that quotes contracts, so this takes no API key and has no fallback.
+ */
+export async function fetchOptionChain(
+  ticker: string,
+  horizonDays: number,
+): Promise<OptionChain> {
+  const providers = await loadProviders();
+  try {
+    return JSON.parse(
+      await providers.options(ticker, Math.round(horizonDays)),
+    ) as OptionChain;
+  } catch (error) {
     throw new Error(String(error));
   }
 }

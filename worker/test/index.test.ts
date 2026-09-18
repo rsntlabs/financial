@@ -89,6 +89,28 @@ describe("Yahoo routes", () => {
     expect((chartInit.headers as Record<string, string>).cookie).toBe("A=1");
   });
 
+  it("routes the option chain to Yahoo's options endpoint, keeping the expiration", async () => {
+    const fetchMock = stubYahooSession((url) =>
+      url.startsWith("https://query1.finance.yahoo.com/v7/finance/options/AAPL")
+        ? jsonResponse({ optionChain: { result: [] } })
+        : undefined,
+    );
+    const worker = await startWorker(fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://proxy.test/yahoo/options/AAPL?date=1771545600"),
+      ENV,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ optionChain: { result: [] } });
+    const [optionsUrl] = fetchMock.mock.calls.find(([input]) =>
+      urlOf(input).includes("/v7/finance/options/"),
+    ) as [RequestInfo | URL];
+    expect(urlOf(optionsUrl)).toContain("date=1771545600");
+    expect(urlOf(optionsUrl)).toContain("crumb=real-crumb");
+  });
+
   it("strips content-encoding and content-length, since fetch() already decoded the body", async () => {
     const fetchMock = stubYahooSession((url) =>
       url.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/AAPL")

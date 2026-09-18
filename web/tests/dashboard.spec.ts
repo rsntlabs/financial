@@ -4,6 +4,8 @@ import {
   STATEMENTS,
   CHART,
   KEY,
+  OPTIONS,
+  optionChain,
   fixture,
   priceFixture,
   fulfillChart,
@@ -449,4 +451,40 @@ test("concurrent tabs share first downloads", async ({ page, context }) => {
   await Promise.all([search(page), search(tab)]);
   expect(calls.filter((c) => c === "financials")).toHaveLength(1);
   expect(calls.filter((c) => c === "prices")).toHaveLength(1);
+});
+
+test("options outlook downloads the chain only on request and ranks structures from the Greeks", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const calls: string[] = [];
+  await stub(page, calls);
+  await page.route(OPTIONS, (route) => {
+    calls.push("options");
+    return route.fulfill({ json: optionChain() });
+  });
+  await page.goto("./");
+  await search(page);
+
+  await page.getByRole("tab", { name: "Options", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Bring the Greeks into the picture." }),
+  ).toBeVisible();
+  // A live chain is never fetched until it is asked for.
+  expect(calls).toEqual(["financials", "prices"]);
+
+  await page.getByRole("button", { name: "Analyze options", exact: true }).click();
+  await expect(page.getByText("TEST view")).toBeVisible({ timeout: 20000 });
+  expect(calls).toEqual(["financials", "prices", "options"]);
+
+  // The recommendation names a structure, prices it, and shows its net Greeks.
+  const recommendation = page.locator(".option-strategy.primary");
+  await expect(recommendation.getByRole("heading")).not.toBeEmpty();
+  await expect(recommendation.getByText("Probability of profit")).toBeVisible();
+  await expect(recommendation.getByText(/Net position/)).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Gamma" })).toBeVisible();
+  await expect(page.getByText(/Model assumptions & limits/)).toBeVisible();
+  await page.screenshot({ path: "test-results/options.png", fullPage: true });
+  expect(errors).toEqual([]);
 });

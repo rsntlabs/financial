@@ -7,6 +7,7 @@ export const UPSTREAM =
   /^https:\/\/(?:fc\.yahoo\.com|query[12]\.finance\.yahoo\.com|www\.sec\.gov|data\.sec\.gov)\//;
 export const STATEMENTS = "**/yahoo/timeseries/**";
 export const CHART = "**/yahoo/chart/**";
+export const OPTIONS = "**/yahoo/options/**";
 export const KEY = "TESTKEY123";
 export const HTTP = {
   NOT_FOUND: 404,
@@ -112,6 +113,62 @@ function chart(data = priceFixture()) {
 
 export async function fulfillChart(route: Route, data = priceFixture()) {
   return route.fulfill({ json: chart(data) });
+}
+
+// Yahoo's v7 option-chain wire shape, as parsed by options.rs. One expiration
+// is listed, roughly at the dashboard's default horizon, so the WASM client
+// never needs the second, date-scoped request.
+const OPTION_DAYS = 45;
+const SECONDS_PER_DAY = 86400;
+export function optionChain(ticker = "TEST", spot = 126) {
+  const today = Math.floor(Date.now() / (SECONDS_PER_DAY * 1000));
+  const expiration = (today + OPTION_DAYS) * SECONDS_PER_DAY;
+  const contract = (kind: "C" | "P", strike: number) =>
+    `${ticker}${expiration}${kind}${strike * 1000}`;
+  // Intrinsic value plus a bell-shaped time value: not a pricing model, just a
+  // plausible smile-free chain for the engine to rank.
+  const premium = (strike: number, call: boolean) =>
+    Math.max(call ? spot - strike : strike - spot, 0) +
+    spot * 0.06 * Math.exp(-(((strike - spot) / (0.3 * spot)) ** 2));
+  const side = (call: boolean) =>
+    [-4, -3, -2, -1, 0, 1, 2, 3, 4].map((step) => {
+      const strike = Math.round(spot * (1 + step * 0.05));
+      const value = premium(strike, call);
+      return {
+        contractSymbol: contract(call ? "C" : "P", strike),
+        strike,
+        expiration,
+        bid: Number((value * 0.97).toFixed(2)),
+        ask: Number((value * 1.03).toFixed(2)),
+        lastPrice: Number(value.toFixed(2)),
+        volume: 250,
+        openInterest: 3000,
+        impliedVolatility: 0.35,
+      };
+    });
+  return {
+    optionChain: {
+      error: null,
+      result: [
+        {
+          underlyingSymbol: ticker,
+          expirationDates: [expiration],
+          quote: {
+            regularMarketPrice: spot,
+            currency: "USD",
+            trailingAnnualDividendYield: 0.005,
+          },
+          options: [
+            {
+              expirationDate: expiration,
+              calls: side(true),
+              puts: side(false),
+            },
+          ],
+        },
+      ],
+    },
+  };
 }
 
 // SEC's company_tickers.json wire shape, as parsed by edgar_rs::Ticker.

@@ -42,6 +42,10 @@ fixes the requested priority order.
 5. Prices use Yahoo's full available daily history, then optional Alpha Vantage
    full daily history. EDGAR has no market-price capability and makes no SEC
    request for prices. Alpha full history may require a suitable paid plan.
+6. Option chains come from Yahoo only, on request, and are never cached: they
+   are intraday quotes, unlike annual statements. Neither SEC nor Alpha Vantage
+   quotes contracts, so the chain has no fallback and the chain request is
+   outside `ProviderChain` (`Yahoo::option_chain`, `BrowserProviders.options`).
 
 The UI always requests coverage for ten fiscal years ending at the latest
 revenue year (or the entered end year on a refresh), regardless of the
@@ -75,6 +79,33 @@ map using the same configured HTTP client, and uses edgar-rs for company facts.
 Ticker mappings are cached for one day, and the most recent company facts for
 one hour. Within each tab (or native process), the shared SEC client limits facts requests
 to five per second; its mutex serializes SEC cache misses. The ticker download is an additional request.
+
+## Options and Greeks
+
+`financial-core`'s `greeks` module prices contracts with Black-Scholes-Merton
+and solves implied volatility by bisection; its `options` module turns an
+analyzed report, the saved daily closes and one Yahoo chain into a ranked
+recommendation. No provider supplies Greeks, so every delta, gamma, theta, vega
+and rho shown is computed here from the quoted mid price, with the provider's
+implied volatility used only when it is a plausible number and re-solved from
+the mid otherwise.
+
+The direction comes from the same fundamentals the dashboard already displays
+(revenue growth and its trend, net margin and its direction, free cash flow
+margin) blended with trailing price returns and the distance from a 200-session
+average; the volatility view compares at-the-money implied volatility with
+realized volatility over 30, 90 and 252 sessions. Those two decide which
+structures are built — outright long premium, debit and credit verticals, an
+iron condor or a straddle — and each is then scored on expected profit,
+probability of profit and how tradeable its quotes are. Payoffs are exact:
+an expiry payoff is piecewise linear with kinks only at the strikes, so maxima,
+minima and breakevens are solved rather than sampled, and probabilities
+integrate a lognormal with the stated drift and forecast volatility.
+
+Assumptions travel with the result (risk-free rate, dividend yield, forecast
+volatility, drift, expiration) and are shown in the panel. The output is a model
+result for a single expiration at expiry, before commissions, assignment and
+early exercise — not investment advice.
 
 ## Financial normalization
 
@@ -116,8 +147,9 @@ native builds and tests are unaffected and still call Yahoo/SEC directly.
 
 ## Cloudflare Worker proxy
 
-`worker/` proxies `GET /yahoo/chart/:symbol`, `/yahoo/quoteSummary/:symbol`
-and `/yahoo/timeseries/:symbol` to the matching Yahoo Finance endpoint, and
+`worker/` proxies `GET /yahoo/chart/:symbol`, `/yahoo/quoteSummary/:symbol`,
+`/yahoo/timeseries/:symbol` and `/yahoo/options/:symbol` to the matching Yahoo
+Finance endpoint, and
 `GET /sec/files/company_tickers.json` / `/sec/api/xbrl/...` to `www.sec.gov`
 and `data.sec.gov`. It owns the real Yahoo session (cookie and crumb, fetched
 and cached Worker-side) and the real SEC `User-Agent` (from the `SEC_USER_AGENT`
@@ -136,7 +168,10 @@ against a real deployment.
 `cargo test --workspace --locked` covers priority, partial results, annual
 history gaps, skipped paid calls, selective Alpha endpoint calls, unsupported
 prices, currency/fiscal-date rejection, annual/restated SEC facts, Yahoo annual
-rows and normalized analysis. Browser tests use the real WASM provider chain
+rows and normalized analysis. Options coverage checks Black-Scholes values and
+put-call parity against published figures, implied-volatility inversion, chain
+normalization and expiration choice, and the direction, volatility regime and
+payoff arithmetic of the recommendation. Browser tests use the real WASM provider chain
 and analysis engine with intercepted Cloudflare Worker proxy responses, and
 reject any request that reaches Yahoo or SEC directly (see `web/tests/upstream.ts`).
 They do not consume any upstream API allowance. `worker/` has its own `npm test`

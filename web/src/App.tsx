@@ -14,6 +14,7 @@ import {
   ChartNoAxesCombined,
   ChevronRight,
   CircleAlert,
+  Sigma,
   FileSpreadsheet,
   Layers3,
   Search,
@@ -42,6 +43,7 @@ import {
   Sparkline,
 } from "@/components/financial-chart";
 import { StockPriceChart } from "@/components/stock-price-chart";
+import { OptionsOutlookPanel } from "@/components/options-outlook";
 import { analyze } from "@/lib/engine";
 import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
@@ -786,6 +788,10 @@ export default function App() {
                   <TabsTrigger value="income">Income statement</TabsTrigger>
                   <TabsTrigger value="balance">Balance sheet</TabsTrigger>
                   <TabsTrigger value="cashflow">Cash flow</TabsTrigger>
+                  <TabsTrigger value="options">
+                    <Sigma size={15} />
+                    Options
+                  </TabsTrigger>
                 </TabsList>
                 <span>{yearsLabel}</span>
               </div>
@@ -924,6 +930,13 @@ export default function App() {
               </TabsContent>
               <TabsContent value="cashflow">
                 <Statement section={report.statements[2]} report={report} />
+              </TabsContent>
+              <TabsContent value="options">
+                <OptionsOutlookPanel
+                  key={report.ticker}
+                  report={report}
+                  apiKey={apiKey}
+                />
               </TabsContent>
             </Tabs>
             <details className="data-notes">

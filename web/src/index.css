@@ -1194,3 +1194,166 @@
     gap: 12px;
   }
 }
+
+.options-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.option-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.option-controls select {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 32px;
+  padding: 0 26px 0 11px;
+  color: var(--foreground);
+}
+.option-controls input {
+  height: 32px;
+  width: 80px;
+  font-size: 11px;
+  border-color: var(--border);
+  background: var(--muted);
+}
+.option-intro {
+  max-width: none;
+}
+.option-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 16px;
+}
+.option-signal,
+.option-strategy {
+  padding: 24px;
+  border-radius: 9px;
+  background: var(--card);
+  box-shadow: none;
+  gap: 16px;
+}
+.option-strategy.primary {
+  border-color: var(--primary);
+}
+.option-strategy-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.option-strategy-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 17px;
+  font-weight: 550;
+}
+.option-strategy-heading p {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  margin-top: 6px;
+}
+/* The engine emits its direction and volatility regime as lowercase words;
+   only those are title-cased, never the sentences around them. */
+.option-strategy-heading [data-slot="badge"],
+.option-signal .option-strategy-heading p {
+  text-transform: capitalize;
+}
+.option-rationale {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.option-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.option-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.option-stat-label {
+  font-size: 9px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.option-stat-value {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.option-stat-detail {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.option-drivers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.option-driver {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.option-driver-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+/* The midpoint is neutral: a bar grows right for a bullish reading and left
+   for a bearish one, so direction is legible without reading the number. */
+.option-driver-bar span {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+}
+.option-driver-bar .positive {
+  background: var(--chart-2);
+}
+.option-driver-bar .negative {
+  background: var(--destructive);
+}
+.option-alternatives {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+.leg-buy {
+  color: var(--chart-2);
+  font-weight: 550;
+}
+.leg-sell {
+  color: var(--destructive);
+  font-weight: 550;
+}
+@media (max-width: 1000px) {
+  .option-summary {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .option-stats,
+  .option-drivers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .option-controls {
+    width: 100%;
+  }
+  .options-panel table {
+    font-size: 10px;
+  }
+}

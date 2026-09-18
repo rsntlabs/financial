@@ -43,6 +43,7 @@ const YAHOO_ROUTES: [prefix: string, base: string][] = [
     "/yahoo/timeseries/",
     "https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries",
   ],
+  ["/yahoo/options/", "https://query1.finance.yahoo.com/v7/finance/options"],
 ];
 
 // Mirrors yfinance-rs's validate_crumb_response (vendor/yfinance-rs/src/core/

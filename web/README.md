@@ -53,6 +53,18 @@ not a service-worker offline application. Browser/profile/origin changes,
 private mode or storage eviction can affect persistence. CSV provides a portable
 export.
 
+## Options outlook
+
+The Options tab downloads a chain only when asked: chains are intraday quotes,
+so nothing about them is cached, and opening the tab costs no request. The
+horizon selector picks the expiration to analyze and the risk-free rate is an
+input, since neither is provider data. Everything else — the Greeks, the
+directional signal, the volatility regime and the ranked structures — is
+computed by `financial-core` in WASM from the report, the saved daily closes and
+the chain (see [provider architecture](../docs/providers.md)). Contracts whose
+implied volatility the provider does not supply, or quotes outside a plausible
+range, are re-solved from the mid price and labeled as such in the table.
+
 ## Checks
 
 ```sh
