@@ -21,12 +21,12 @@ import {
   TableRow,
 } from "./ui/table";
 import {
-  DEFAULT_HORIZON_DAYS,
   DEFAULT_MAX_PREMIUM,
   DEFAULT_MIN_DELTA,
   DEFAULT_RISK_FREE_RATE,
   loadOutlook,
 } from "@/lib/options";
+import { horizonLabel, type TimeSpan } from "@/lib/timespan";
 import { number, percent } from "@/lib/format";
 import type {
   Nullable,
@@ -37,18 +37,6 @@ import type {
   Working,
 } from "@/lib/types";
 
-// Anything from the next few weeks to the LEAPS a couple of years out; the
-// engine measures whichever expiration the chain actually lists nearest it.
-const HORIZONS = [
-  { days: 14, label: "14 days" },
-  { days: 30, label: "30 days" },
-  { days: 45, label: "45 days" },
-  { days: 90, label: "90 days" },
-  { days: 180, label: "180 days" },
-  { days: 365, label: "1 year" },
-  { days: 545, label: "18 months" },
-  { days: 730, label: "2 years" },
-];
 /** A user-typed limit, or the default when it is empty or out of range. */
 const limit = (value: string, fallback: number, low: number, high: number) => {
   const parsed = Number(value);
@@ -426,17 +414,26 @@ function Calculation({
   );
 }
 
+/**
+ * The chain read as far forward as the dashboard's time span reaches back.
+ * The horizon is not this panel's to choose: it comes from the one control in
+ * the toolbar, so the expirations analyzed here answer the same window as the
+ * fundamentals that set the direction. Everything the panel still owns — the
+ * risk-free rate, the premium budget, the delta floor — is a limit rather than
+ * a period.
+ */
 export function OptionsOutlookPanel({
   report,
   apiKey,
+  span,
 }: {
   report: Report;
   apiKey: string;
+  span: TimeSpan;
 }) {
   const [outlook, setOutlook] = useState<OptionsOutlook | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [horizon, setHorizon] = useState(DEFAULT_HORIZON_DAYS);
   const [shown, setShown] = useState("");
   const [rate, setRate] = useState(String(DEFAULT_RISK_FREE_RATE * 100));
   const [premium, setPremium] = useState(String(DEFAULT_MAX_PREMIUM));
@@ -448,7 +445,7 @@ export function OptionsOutlookPanel({
     try {
       setOutlook(
         await loadOutlook(report, apiKey, {
-          horizonDays: horizon,
+          horizonDays: span.horizonDays,
           riskFreeRate: Number(rate) / 100,
           maxPremium: limit(premium, DEFAULT_MAX_PREMIUM, 1, 10_000_000),
           minDelta: limit(delta, DEFAULT_MIN_DELTA, 0, 0.95),
@@ -491,6 +488,10 @@ export function OptionsOutlookPanel({
     return entries;
   }, [outlook]);
   const selected = derivations.get(shown) ?? derivations.values().next().value;
+  // A span chosen after the chain was read leaves the result answering the
+  // window it was measured against, not the one on screen.
+  const stale =
+    !!outlook && Math.round(outlook.horizonDays) !== span.horizonDays;
   const currency = outlook?.currency || report.currency || "Quote currency";
   return (
     <section className="options-panel" aria-label="Options outlook">
@@ -504,20 +505,14 @@ export function OptionsOutlookPanel({
           </p>
         </div>
         <div className="option-controls">
-          <label htmlFor="option-horizon" className="sr-only">
-            Horizon in days
-          </label>
-          <select
-            id="option-horizon"
-            value={horizon}
-            onChange={(e) => setHorizon(Number(e.target.value))}
-          >
-            {HORIZONS.map((horizon) => (
-              <option key={horizon.days} value={horizon.days}>
-                {horizon.label}
-              </option>
-            ))}
-          </select>
+          <span className="option-horizon">
+            Horizon <strong>{horizonLabel(span.horizonDays)}</strong>{" "}
+            <span className="footnote">
+              {stale
+                ? "· re-run to use the current time span"
+                : "· from the dashboard time span"}
+            </span>
+          </span>
           <label htmlFor="option-rate">Risk-free %</label>
           <Input
             id="option-rate"
@@ -579,10 +574,10 @@ export function OptionsOutlookPanel({
             is downloaded only when you ask for it. The analysis re-solves every
             implied volatility it cannot trust, prices delta, gamma, theta, vega
             and rho for each contract, and ranks structures by expected profit,
-            probability of profit and how tradeable the quotes are. Choose a
-            horizon from two weeks to two years, cap what a structure may cost
-            to open, and set how much delta the contract carrying the view has
-            to have.
+            probability of profit and how tradeable the quotes are. The
+            dashboard's time span sets how far forward the chain is read, up to
+            the two-year LEAPS; cap what a structure may cost to open, and set
+            how much delta the contract carrying the view has to have.
           </p>
         </Card>
       ) : null}

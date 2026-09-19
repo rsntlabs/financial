@@ -8,7 +8,6 @@ import type {
   Report,
 } from "./types";
 
-export const DEFAULT_HORIZON_DAYS = 45;
 export const DEFAULT_RISK_FREE_RATE = 0.04;
 /** Most premium, in quote currency, a recommended structure may cost to open. */
 export const DEFAULT_MAX_PREMIUM = 3000;
@@ -16,6 +15,7 @@ export const DEFAULT_MAX_PREMIUM = 3000;
 export const DEFAULT_MIN_DELTA = 0.65;
 
 export interface OptionsSettings {
+  /** How far forward to read the chain; the dashboard's time span sets it. */
   horizonDays: number;
   riskFreeRate: number;
   maxPremium: number;

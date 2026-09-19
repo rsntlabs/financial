@@ -49,11 +49,11 @@ fixes the requested priority order.
 
 The UI always requests coverage for ten fiscal years ending at the latest
 revenue year (or the entered end year on a refresh), regardless of the
-selected display window, so subsequent 3/5/10-year selections can run
-locally. This matters because Yahoo's free statement data reliably covers
-only about 3 recent fiscal years; requesting the full ten lets SEC EDGAR (and
-an optional Alpha Vantage key) fill in older years where they can, even
-though the dashboard displays 3 years by default. Providers can supply more
+dashboard's chosen time span, so every later span can be answered locally.
+This matters because Yahoo's free statement data reliably covers only about 3
+recent fiscal years; requesting the full ten lets SEC EDGAR (and an optional
+Alpha Vantage key) fill in older years where they can, even though the
+dashboard shows a three-year span by default. Providers can supply more
 history; the provider chain preserves it. Missing or unsupported fields
 remain gaps. Historical windows outside a saved snapshot require setting the
 end year and using Refresh data.

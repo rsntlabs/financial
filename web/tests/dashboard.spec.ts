@@ -24,6 +24,16 @@ async function setup(page: Page, remember = false) {
   await expect(page.getByText(/Key saved/)).toBeVisible();
   await page.getByRole("button", { name: "Close settings" }).click();
 }
+// The dashboard's one period control. Every panel reads the span chosen here,
+// so there is nothing else on the page to set a window with.
+function spanControl(page: Page) {
+  return page.getByRole("group", { name: "Time span" });
+}
+async function chooseSpan(page: Page, label: string) {
+  await spanControl(page)
+    .getByRole("button", { name: label, exact: true })
+    .click();
+}
 async function search(page: Page, symbol = "TEST") {
   await page.getByLabel("Ticker symbol", { exact: true }).fill(symbol);
   await page.getByLabel("Ticker symbol", { exact: true }).press("Enter");
@@ -90,26 +100,33 @@ test("price chart shows the latest close and daily change, filters locally, and 
   await expect(panel.getByText(/As of Sep 15, 2026/)).toBeVisible();
   await expect(panel.getByText(/Not real-time/)).toBeVisible();
   const chart = panel.getByRole("img");
+  // The window is the dashboard's, not this panel's: three years by default.
+  await expect(panel.getByText("Last 3 years")).toBeVisible();
   await expect(chart).toHaveAttribute(
     "aria-label",
-    /2026-09-01 to 2026-09-15, 3 trading sessions/,
+    /2026-05-15 to 2026-09-15, 6 trading sessions/,
   );
   await expect(chart.locator(".recharts-line-curve")).toHaveAttribute(
     "d",
     /M.+L/,
   );
-  await panel.getByRole("button", { name: "3M", exact: true }).click();
+  await chooseSpan(page, "1 month");
+  await expect(chart).toHaveAttribute(
+    "aria-label",
+    /2026-09-01 to 2026-09-15, 3 trading sessions/,
+  );
+  await chooseSpan(page, "3 months");
   await expect(chart).toHaveAttribute(
     "aria-label",
     /2026-06-16 to 2026-09-15, 5 trading sessions/,
   );
-  await panel.getByRole("button", { name: "All", exact: true }).click();
+  await chooseSpan(page, "Maximum");
   await expect(chart).toHaveAttribute(
     "aria-label",
     /2026-05-15 to 2026-09-15, 6 trading sessions/,
   );
   await expect(
-    panel.getByRole("button", { name: "All", exact: true }),
+    spanControl(page).getByRole("button", { name: "Maximum", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await chart.locator(".recharts-surface").focus();
   await page.keyboard.press("ArrowRight");
@@ -123,8 +140,7 @@ test("price chart shows the latest close and daily change, filters locally, and 
   await expect(panel.locator(".recharts-tooltip-wrapper")).toContainText(
     "May 15, 2026Close100.00",
   );
-  await page.getByLabel("Number of fiscal years").selectOption("10");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await chooseSpan(page, "10 years");
   await expect(chart).toHaveAttribute("aria-label", /6 trading sessions/);
   expect(calls).toHaveLength(2);
 });
@@ -140,8 +156,7 @@ test("cache survives reload and another tab, and period changes make no requests
   await page.reload();
   await search(page);
   await expect(page.getByText(/No API requests used/)).toBeVisible();
-  await page.getByLabel("Number of fiscal years").selectOption("10");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await chooseSpan(page, "10 years");
   expect(calls).toEqual(["financials", "prices"]);
   const tab = await context.newPage();
   const more: string[] = [];
@@ -351,11 +366,11 @@ test("all available price history is preserved and calendar controls stay local"
   await search(page);
   const panel = page.getByRole("region", { name: "TEST stock price" });
   for (const [label, start] of [
-    ["3Y", "2023-09-15"],
-    ["5Y", "2021-09-15"],
-    ["All", "1980-12-12"],
+    ["3 years", "2023-09-15"],
+    ["5 years", "2021-09-15"],
+    ["Maximum", "1980-12-12"],
   ]) {
-    await panel.getByRole("button", { name: label, exact: true }).click();
+    await chooseSpan(page, label);
     await expect(panel.getByRole("img")).toHaveAttribute(
       "aria-label",
       new RegExp(`${start} to 2026-09-15`),
@@ -580,10 +595,24 @@ test("options outlook downloads the chain only on request and ranks structures f
   ).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
 
-  // A horizon beyond a year, a premium budget and a delta floor are all the
-  // user's to set: the chain is fetched again and the result says what it was
-  // measured against.
-  await page.getByLabel("Horizon in days").selectOption("730");
+  // The horizon is the dashboard's time span, read forward: three years back
+  // asks the chain for the two-year LEAPS, and the panel has no period control
+  // of its own to disagree with it.
+  await expect(page.getByLabel("Horizon in days")).toHaveCount(0);
+  await expect(page.locator(".option-horizon")).toContainText(
+    "Horizon 2 years",
+  );
+  await page.getByText(/Model assumptions & limits/).click();
+  await expect(page.getByText(/against a 730-day horizon/)).toBeVisible();
+  await page.getByText(/Model assumptions & limits/).click();
+
+  // A shorter span, a premium budget and a delta floor all change what is
+  // searched. The chain is intraday, so a span change asks for a re-run rather
+  // than restating a result measured against the old window.
+  await chooseSpan(page, "3 months");
+  await expect(
+    page.getByText(/re-run to use the current time span/),
+  ).toBeVisible();
   await page.getByLabel("Max premium").fill("5000");
   await page.getByLabel("Min delta").fill("0.5");
   await page
@@ -594,7 +623,7 @@ test("options outlook downloads the chain only on request and ranks structures f
   ).toBeVisible({ timeout: 20000 });
   expect(calls.filter((c) => c === "options")).toHaveLength(2);
   await page.getByText(/Model assumptions & limits/).click();
-  await expect(page.getByText(/against a 730-day horizon/)).toBeVisible();
+  await expect(page.getByText(/against a 90-day horizon/)).toBeVisible();
   await expect(
     page.getByText(/a structure may cost at most 5000 to open/),
   ).toBeVisible();
@@ -666,8 +695,7 @@ test("capital expenditure and depreciation read together in their own tab", asyn
   await page
     .getByRole("button", { name: "See capital investment & D&A", exact: true })
     .click();
-  await page.getByLabel("Number of fiscal years").selectOption("5");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await chooseSpan(page, "5 years");
   await expect(
     panel.getByRole("img", {
       name: "Capital investment, fiscal years 2021 to 2025",
@@ -681,5 +709,69 @@ test("capital expenditure and depreciation read together in their own tab", asyn
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
   }
+  expect(errors).toEqual([]);
+});
+
+test("one time span sets the statements, the price window and the options horizon", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const calls: string[] = [];
+  await stub(page, calls);
+  await page.goto("./");
+  await search(page);
+
+  // There is one period control on the page, and the panels that used to
+  // carry their own now read it instead.
+  await expect(spanControl(page).getByRole("button")).toHaveCount(8);
+  await expect(
+    page.getByRole("group", { name: "Price history range" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Number of fiscal years")).toHaveCount(0);
+  await expect(page.locator(".span-summary")).toHaveText(
+    "3 fiscal years of statements · 3 years of daily closes · option expirations nearest 2 years out",
+  );
+
+  // One click moves the price window and the option horizon together, and
+  // says so.
+  const chart = page
+    .getByRole("region", { name: "TEST stock price" })
+    .getByRole("img");
+  await chooseSpan(page, "1 month");
+  await expect(page.locator(".span-summary")).toHaveText(
+    "3 fiscal years of statements · 1 month of daily closes · option expirations nearest 1 month out",
+  );
+  await expect(chart).toHaveAttribute("aria-label", /3 trading sessions/);
+  await page.getByRole("tab", { name: "Options", exact: true }).click();
+  await expect(page.locator(".option-horizon")).toContainText(
+    "Horizon 1 month",
+  );
+  await page.getByRole("tab", { name: "Overview", exact: true }).click();
+
+  // A span long enough to move the fiscal window moves the statements too,
+  // without a request for any of it.
+  await chooseSpan(page, "5 years");
+  await expect(
+    page.getByRole("img", {
+      name: "Revenue, fiscal years 2021 to 2025",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(chart).toHaveAttribute("aria-label", /6 trading sessions/);
+  await expect(page.locator(".span-summary")).toContainText(
+    "5 fiscal years of statements",
+  );
+  expect(calls).toEqual(["financials", "prices"]);
+
+  // The chosen span is the dashboard's, so it survives a move to another
+  // company.
+  await search(page, "NEXT");
+  await expect(
+    spanControl(page).getByRole("button", { name: "5 years", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".span-summary")).toContainText(
+    "5 fiscal years of statements",
+  );
   expect(errors).toEqual([]);
 });
