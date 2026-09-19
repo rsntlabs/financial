@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
 import { Skeleton } from "./ui/skeleton";
 import { Alert, AlertDescription } from "./ui/alert";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { loadPrices } from "@/lib/prices";
+import { priceWindow, type TimeSpan } from "@/lib/timespan";
 import type { PriceHistory } from "@/lib/types";
 
 const price = (value: number) =>
@@ -24,16 +24,21 @@ const dateLabel = (value: string) =>
     timeZone: "UTC",
   });
 const config = { close: { label: "Daily close", color: "var(--chart-2)" } };
-const rangeMonths = { "1M": 1, "3M": 3, "3Y": 36, "5Y": 60, ALL: 0 };
-type PriceRange = keyof typeof rangeMonths;
 
+/**
+ * Daily closes over the dashboard's time span. The window is not this panel's
+ * to choose — it comes from the one control in the toolbar, so the prices and
+ * the statements below them always cover the same stretch of time.
+ */
 export function StockPriceChart({
   ticker,
   apiKey,
+  span,
   onSettings,
 }: {
   ticker: string;
   apiKey: string;
+  span: TimeSpan;
   onSettings: () => void;
 }) {
   const [history, setHistory] = useState<PriceHistory | null>(null);
@@ -41,7 +46,6 @@ export function StockPriceChart({
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [range, setRange] = useState<PriceRange>("1M");
   const request = useRef(0);
   const load = useCallback(
     async (refresh = false) => {
@@ -73,12 +77,12 @@ export function StockPriceChart({
   const latest = history?.points.at(-1);
   const previous = history?.points.at(-2);
   const change = latest && previous ? latest.close - previous.close : null;
-  // Anchor ranges to the latest available session, including for older cached data.
+  // Anchor the span to the latest available session, including for older cached data.
   const cutoff = latest ? new Date(`${latest.date}T00:00:00Z`) : null;
-  if (cutoff && range !== "ALL") {
+  if (cutoff && span.months) {
     const day = cutoff.getUTCDate();
     cutoff.setUTCDate(1);
-    cutoff.setUTCMonth(cutoff.getUTCMonth() - rangeMonths[range]);
+    cutoff.setUTCMonth(cutoff.getUTCMonth() - span.months);
     const lastDay = new Date(
       Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0),
     ).getUTCDate();
@@ -86,7 +90,7 @@ export function StockPriceChart({
   }
   const points =
     history?.points.filter(
-      (p) => range === "ALL" || p.date >= cutoff!.toISOString().slice(0, 10),
+      (p) => !span.months || p.date >= cutoff!.toISOString().slice(0, 10),
     ) ?? [];
 
   return (
@@ -102,35 +106,10 @@ export function StockPriceChart({
                 </h2>
               </CardTitle>
               <p className="footnote mt-1.5">
-                Daily close · Exchange quote units
+                Daily close · Exchange quote units · {priceWindow(span)}
               </p>
             </div>
             <div className="price-actions">
-              {/* type="multiple" is deliberate: Radix's type="single" swaps in
-                  radiogroup/radio semantics and drops aria-pressed, which the
-                  Playwright suite asserts on via getByRole("button", ...). A
-                  single-element value array keeps this a single-select. */}
-              <ToggleGroup
-                type="multiple"
-                role="group"
-                value={[range]}
-                onValueChange={(values) => {
-                  const next = values.find((v) => v !== range);
-
-                  if (next) {
-                    setRange(next as PriceRange);
-                  }
-                }}
-                disabled={!history}
-                className="price-ranges"
-                aria-label="Price history range"
-              >
-                {(Object.keys(rangeMonths) as PriceRange[]).map((value) => (
-                  <ToggleGroupItem key={value} value={value} size="sm">
-                    {value === "ALL" ? "All" : value}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
               <Button
                 size="sm"
                 variant="outline"
@@ -208,7 +187,7 @@ export function StockPriceChart({
                     minTickGap={45}
                     tickMargin={12}
                     tickFormatter={(value) =>
-                      range === "1M" || range === "3M"
+                      span.months && span.months <= 3
                         ? dateLabel(value).replace(/, \d{4}$/, "")
                         : dateLabel(value).replace(/ \d+,/, "")
                     }
@@ -264,7 +243,7 @@ export function StockPriceChart({
                   · Unadjusted for splits and dividends
                 </span>
               </div>
-              {range === "ALL" && history?.outputSize === "full" && (
+              {!span.months && history?.outputSize === "full" && (
                 <p className="footnote mt-2">
                   All available trading history is shown. Provider coverage may
                   start after the company’s listing date.

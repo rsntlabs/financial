@@ -31,7 +31,7 @@ Legacy Alpha statements and prices still open. Pending legacy Alpha endpoint
 downloads are not resumed by the browser provider chain.
 
 Saved data has no automatic expiry. A saved ticker is opened before any network
-request. Web Locks deduplicate first loads across tabs. Period controls operate
+request. Web Locks deduplicate first loads across tabs. The time span operates
 locally; use Refresh data with an ending year to acquire older history. Failed
 refreshes keep the prior saved snapshot. Partial financial coverage with usable
 revenue is saved with gap warnings. Add a key and refresh to try additional
@@ -39,11 +39,12 @@ coverage. Browser storage failures are shown to the user.
 
 Prices load independently after statements. They prefer full Yahoo history and
 fall back to Alpha only when needed. SEC supplies no daily prices. The chart
-shows the latest daily close, daily change, and 1M/3M/3Y/5Y/All ranges ending on
-the latest loaded session. All preserves every available session. Price source
-is shown separately from financial sources; quote units are not assumed to
-match reporting currency. Legacy compact histories are upgraded through the
-provider chain, even without a key, and retained if upgrading fails.
+shows the latest daily close, the daily change, and the dashboard's time span
+ending on the latest loaded session; it has no range control of its own. The
+maximum span preserves every available session. Price source is shown
+separately from financial sources; quote units are not assumed to match
+reporting currency. Legacy compact histories are upgraded through the provider
+chain, even without a key, and retained if upgrading fails.
 
 Refresh price changes prices only. Clearing saved data removes financials and
 prices and atomically invalidates in-flight price cache writes across tabs.
@@ -52,6 +53,28 @@ reports work without providers, but UI assets still need to be served; this is
 not a service-worker offline application. Browser/profile/origin changes,
 private mode or storage eviction can affect persistence. CSV provides a portable
 export.
+
+## Time span
+
+`src/lib/timespan.ts` holds the dashboard's one window. The user picks a span
+once, in the toolbar above the price chart, and every panel reads the part of
+it that its data supports: `years` for the statements the WASM engine
+analyzes, `months` for the daily closes the price chart draws (0 being every
+saved session), and `horizonDays` for how far forward the option chain is
+read. The parts differ because the data does — statements arrive as whole
+fiscal years and only 3, 5 or 10 of them are reliably sourced, so every span
+shorter than five years settles on the shortest statement window, and the
+option horizon stops at the two-year LEAPS that Yahoo lists as its longest
+expiration. The line under the toolbar states all three for the chosen span,
+so the mapping is on screen rather than in this file only.
+
+Choosing a span costs no request: prices and statements are already in hand,
+and the statements are only re-analyzed when the fiscal window itself moves.
+The ending fiscal year sits beside the span, as the anchor the window ends on
+rather than a second window; changing it may need Refresh data to acquire
+older history. The balance sheet's fiscal-year selector is not a span but a
+point inside one — which year's snapshot the donuts show — so it stays on
+that tab, offering the years the span covers.
 
 ## Capital & D&A
 
@@ -86,21 +109,25 @@ rows below carry the figures.
 
 The Options tab downloads a chain only when asked: chains are intraday quotes,
 so nothing about them is cached, and opening the tab costs no request. The
-horizon selector picks the expiration to analyze, from 14 days to two years, so
-LEAPS are analyzed at the time value they actually carry rather than being cut
-off at a year. The risk-free rate, the maximum premium (3,000 by default) and
-the minimum delta (0.65 by default) are inputs too, since none of them is
-provider data. The premium limit is the most a recommended structure may cost
-to open, so a structure that collects premium is never limited by it; the delta
-floor applies to the contract bought to carry the directional view, while legs
-sold and the wings bought to define their risk are chosen by the shape of the
-structure. Contracts outside either limit stay in the table, dimmed, since they
-are still the market the recommendation was chosen from. Everything else — the Greeks, the
-directional signal, the volatility regime and the ranked structures — is
-computed by `financial-core` in WASM from the report, the saved daily closes and
-the chain (see [provider architecture](../docs/providers.md)). Contracts whose
-implied volatility the provider does not supply, or quotes outside a plausible
-range, are re-solved from the mid price and labeled as such in the table.
+expiration to analyze comes from the dashboard's time span, read forward
+(`src/lib/timespan.ts`): a month for the shortest span, up to the two-year
+LEAPS for any span of three years or more, so LEAPS are analyzed at the time
+value they actually carry rather than being cut off at a year. Because a chain
+is never cached, changing the span does not re-download one; the panel says so
+and the analysis is re-run on request. The risk-free rate, the maximum premium
+(3,000 by default) and the minimum delta (0.65 by default) stay the panel's
+own, since none of them is a period or provider data. The premium limit is the
+most a recommended structure may cost to open, so a structure that collects
+premium is never limited by it; the delta floor applies to the contract bought
+to carry the directional view, while legs sold and the wings bought to define
+their risk are chosen by the shape of the structure. Contracts outside either
+limit stay in the table, dimmed, since they are still the market the
+recommendation was chosen from. Everything else — the Greeks, the directional
+signal, the volatility regime and the ranked structures — is computed by
+`financial-core` in WASM from the report, the saved daily closes and the chain
+(see [provider architecture](../docs/providers.md)). Contracts whose implied
+volatility the provider does not supply, or quotes outside a plausible range,
+are re-solved from the mid price and labeled as such in the table.
 
 The calculation card shows the derivation for any recommended leg or ranked
 contract: the six inputs, the intermediate terms (d₁, d₂, N(d₁), N(d₂), φ(d₁),

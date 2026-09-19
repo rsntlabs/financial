@@ -420,8 +420,9 @@
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
   padding: 24px 0;
-  margin-bottom: 26px;
+  margin-bottom: 11px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 .toolbar-note {
   display: flex;
@@ -436,20 +437,26 @@
   background: var(--border);
   margin: 0 3px;
 }
+/* The dashboard's one period control: the span every panel reads, and the
+   fiscal year the window ends on. */
 .period-form {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 11px;
   color: var(--muted-foreground);
 }
-.period-form select {
-  background: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  height: 32px;
-  padding: 0 26px 0 11px;
-  color: var(--foreground);
+.span-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.span-ranges > * {
+  font-size: 11px;
+}
+.span-summary {
+  margin-bottom: 26px;
 }
 .period-form input {
   height: 32px;
@@ -942,10 +949,6 @@
 .price-actions button {
   font-size: 11px;
 }
-.price-ranges {
-  display: flex;
-  gap: 3px;
-}
 .price-summary {
   margin-top: 16px;
 }
@@ -1142,8 +1145,13 @@
   .period-form {
     width: 100%;
   }
-  .period-form select {
-    flex: 1;
+  /* Eight spans do not fit one phone row, so they take two rather than
+     pushing the page wider than the viewport. */
+  .span-ranges {
+    width: 100%;
+  }
+  .span-ranges > * {
+    flex: 1 1 auto;
   }
   .period-form input {
     width: 80px;
@@ -1344,6 +1352,16 @@
   font-size: 11px;
   border-color: var(--border);
   background: var(--muted);
+}
+.option-horizon {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.option-horizon strong {
+  color: var(--foreground);
+  font-weight: 560;
 }
 .option-intro p {
   max-width: none;

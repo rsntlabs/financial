@@ -29,6 +29,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Table,
   TableBody,
@@ -48,6 +49,13 @@ import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
 import { DataSettings } from "@/components/data-settings";
 import { downloadStatements, number, percent } from "@/lib/format";
+import {
+  DEFAULT_TIME_SPAN,
+  TIME_SPANS,
+  spanSummary,
+  timeSpan,
+  type TimeSpanId,
+} from "@/lib/timespan";
 import type { Report, Section, TickerEntry } from "@/lib/types";
 
 const SUGGESTION_LIMIT = 8;
@@ -292,12 +300,19 @@ export default function App() {
   const [payload, setPayload] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [years, setYears] = useState(3);
+  const [spanId, setSpanId] = useState<TimeSpanId>(DEFAULT_TIME_SPAN);
   const [endYear, setEndYear] = useState("");
   const [tab, setTab] = useState("overview");
   const [tickers, setTickers] = useState<TickerEntry[]>([]);
   const request = useRef<AbortController | null>(null);
+  const rebuilt = useRef(0);
+  // The ending year the report on screen was built with, as opposed to what
+  // is currently typed: choosing a span must not commit a half-typed year.
+  const applied = useRef("");
   const inputRef = useRef<string>("");
+  // One window for the whole dashboard: statements, daily closes and the
+  // option chain each take the part of it they can use.
+  const span = timeSpan(spanId);
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
     loadTickers()
@@ -334,10 +349,11 @@ export default function App() {
       const next = await analyze(
         symbol,
         data,
-        years,
+        span.years,
         endYear ? Number(endYear) : undefined,
       );
       if (controller.signal.aborted) return;
+      applied.current = endYear;
       setCached(loaded.cached);
       setStorageWarning(loaded.warning);
       setSettings(false);
@@ -352,28 +368,45 @@ export default function App() {
       if (!controller.signal.aborted) setBusy(false);
     }
   }
-  async function updatePeriod(e: FormEvent) {
-    e.preventDefault();
+  // Re-reads the statements already in hand against a different window. The
+  // analysis is local, so no span change ever costs a request; spans can be
+  // clicked through faster than the engine answers, so only the window still
+  // chosen when a run finishes is the one shown.
+  async function rebuild(years: number) {
     if (!report || !payload) return;
+    const id = ++rebuilt.current;
     setBusy(true);
     setError("");
     try {
-      setReport(
-        await analyze(
-          report.ticker,
-          payload,
-          years,
-          endYear ? Number(endYear) : undefined,
-        ),
+      const next = await analyze(
+        report.ticker,
+        payload,
+        years,
+        applied.current ? Number(applied.current) : undefined,
       );
+      if (rebuilt.current === id) setReport(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (rebuilt.current === id)
+        setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (rebuilt.current === id) setBusy(false);
     }
+  }
+  async function updatePeriod(e: FormEvent) {
+    e.preventDefault();
+    applied.current = endYear;
+    await rebuild(span.years);
+  }
+  // The price chart and the options horizon follow the span as it is chosen;
+  // the statements are only re-analyzed when the fiscal window itself moves.
+  function chooseSpan(next: TimeSpanId) {
+    const chosen = timeSpan(next);
+    setSpanId(chosen.id);
+    if (chosen.years !== span.years) void rebuild(chosen.years);
   }
   function home() {
     request.current?.abort();
+    applied.current = "";
     setReport(null);
     setPayload(null);
     setTicker("");
@@ -580,18 +613,36 @@ export default function App() {
                 Amounts in millions
               </div>
               <form onSubmit={updatePeriod} className="period-form">
-                <label htmlFor="years" className="sr-only">
-                  Number of fiscal years
-                </label>
-                <select
-                  id="years"
-                  value={years}
-                  onChange={(e) => setYears(Number(e.target.value))}
+                <span id="time-span-label">Time span</span>
+                {/* type="multiple" is deliberate: Radix's type="single" swaps
+                    in radiogroup/radio semantics and drops aria-pressed, which
+                    the Playwright suite asserts on via getByRole("button", …).
+                    A single-element value array keeps this a single-select. */}
+                <ToggleGroup
+                  type="multiple"
+                  role="group"
+                  value={[span.id]}
+                  onValueChange={(values) => {
+                    const next = values.find((v) => v !== span.id);
+
+                    if (next) {
+                      chooseSpan(next as TimeSpanId);
+                    }
+                  }}
+                  className="span-ranges"
+                  aria-labelledby="time-span-label"
                 >
-                  <option value={3}>3 years</option>
-                  <option value={5}>5 years</option>
-                  <option value={10}>10 years</option>
-                </select>
+                  {TIME_SPANS.map((option) => (
+                    <ToggleGroupItem
+                      key={option.id}
+                      value={option.id}
+                      size="sm"
+                      aria-label={option.label}
+                    >
+                      {option.short}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
                 <label htmlFor="end-year">Ending</label>
                 <Input
                   id="end-year"
@@ -612,6 +663,9 @@ export default function App() {
                 </Button>
               </form>
             </div>
+            <p className="span-summary footnote" role="status">
+              {spanSummary(span)}
+            </p>
             {error && (
               <Alert variant="destructive" className="dashboard-alert">
                 <CircleAlert />
@@ -635,6 +689,7 @@ export default function App() {
               key={report.ticker}
               ticker={report.ticker}
               apiKey={apiKey}
+              span={span}
               onSettings={() => setSettings(true)}
             />
             <div className="section-caption">
@@ -814,8 +869,11 @@ export default function App() {
                     </p>
                     <div className="reading-divider" />
                     <p className="text-sm">
-                      Statement charts use the same fiscal-year window. Missing
-                      values stay missing, and negative values are preserved.
+                      One time span at the top of the dashboard sets this
+                      window: the statements charted here, the daily closes
+                      above them and the option expirations analyzed on the
+                      Options tab. Missing values stay missing, and negative
+                      values are preserved.
                     </p>
                     <div className="reading-links">
                       <Button
@@ -854,6 +912,7 @@ export default function App() {
                   key={report.ticker}
                   report={report}
                   apiKey={apiKey}
+                  span={span}
                 />
               </TabsContent>
             </Tabs>
