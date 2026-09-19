@@ -64,8 +64,11 @@ impl Quote {
     fn mid(&self) -> Option<f64> {
         match (self.bid.filter(|b| *b > 0.0), self.ask.filter(|a| *a > 0.0)) {
             (Some(bid), Some(ask)) if ask >= bid => Some(0.5 * (bid + ask)),
-            (Some(bid), None) => Some(bid),
-            (None, Some(ask)) => Some(ask),
+            // A lone quote is not a midpoint and, in particular, must not be
+            // treated as executable on both sides of a recommended trade.
+            // Prefer the most recent trade, and discard the contract when
+            // there is no last trade from which to derive a neutral price.
+            (Some(_), None) | (None, Some(_)) => self.last.filter(|l| *l > 0.0),
             _ => self.last.filter(|l| *l > 0.0),
         }
         .and_then(finite)
@@ -665,6 +668,23 @@ fn pick(candidates: &[Candidate], kind: Kind, delta: f64) -> Option<&Candidate> 
                 .then(b.liquidity.total_cmp(&a.liquidity))
         })
 }
+
+fn valid_debit_vertical(bullish: bool, long_strike: f64, short_strike: f64) -> bool {
+    if bullish {
+        long_strike < short_strike
+    } else {
+        long_strike > short_strike
+    }
+}
+
+fn valid_credit_vertical(bullish: bool, short_strike: f64, wing_strike: f64) -> bool {
+    if bullish {
+        wing_strike < short_strike
+    } else {
+        short_strike < wing_strike
+    }
+}
+
 fn leg(action: &'static str, candidate: &Candidate, contracts: u32) -> Leg {
     Leg {
         action,
@@ -906,7 +926,10 @@ fn strategies(
             // Debit spread: caps the payoff but sells back part of the vega and
             // theta, which is what makes it the better trade when vol is rich.
             if let Some(short) = pick(candidates, long_side, if bullish { 0.28 } else { -0.28 }) {
-                if (short.strike - long.strike).abs() > f64::EPSILON {
+                // Delta is normally monotonic by strike, but stale or skewed
+                // IV can violate that assumption. The named payoff requires
+                // this ordering regardless of the selected deltas.
+                if valid_debit_vertical(bullish, long.strike, short.strike) {
                     add(evaluate(
                         if bullish { "Bull call spread" } else { "Bear put spread" },
                         format!(
@@ -935,7 +958,7 @@ fn strategies(
             pick(candidates, short_side, if bullish { -0.28 } else { 0.28 }),
             pick(candidates, short_side, if bullish { -0.14 } else { 0.14 }),
         ) {
-            if (short.strike - wing.strike).abs() > f64::EPSILON {
+            if valid_credit_vertical(bullish, short.strike, wing.strike) {
                 add(evaluate(
                     if bullish { "Bull put spread" } else { "Bear call spread" },
                     format!(
@@ -987,26 +1010,28 @@ fn strategies(
                 ));
             }
         }
-    } else if let (Some(call), Some(put)) = (
-        pick(candidates, Kind::Call, 0.5),
-        pick(candidates, Kind::Put, -0.5),
-    ) {
-        // Cheap volatility with no directional view: own the movement itself.
-        add(evaluate(
-            "Long straddle",
-            format!(
-                "Buy the {:.2} call and the {:.2} put, expiring {}",
-                call.strike, put.strike, call.expiration
-            ),
-            format!(
-                "No directional edge, but movement is cheap: {} of premium buys {:+.2} of gamma per share. {vol_note}",
-                money((call.mid + put.mid) * CONTRACT_MULTIPLIER),
-                call.greeks.gamma + put.greeks.gamma,
-            ),
-            Direction::Neutral,
-            vec![leg("buy", call, 1), leg("buy", put, 1)],
-            market,
-        ));
+    } else if volatility.regime == VolRegime::Cheap {
+        if let (Some(call), Some(put)) = (
+            pick(candidates, Kind::Call, 0.5),
+            pick(candidates, Kind::Put, -0.5),
+        ) {
+            // Cheap volatility with no directional view: own the movement itself.
+            add(evaluate(
+                "Long straddle",
+                format!(
+                    "Buy the {:.2} call and the {:.2} put, expiring {}",
+                    call.strike, put.strike, call.expiration
+                ),
+                format!(
+                    "No directional edge, but movement is cheap: {} of premium buys {:+.2} of gamma per share. {vol_note}",
+                    money((call.mid + put.mid) * CONTRACT_MULTIPLIER),
+                    call.greeks.gamma + put.greeks.gamma,
+                ),
+                Direction::Neutral,
+                vec![leg("buy", call, 1), leg("buy", put, 1)],
+                market,
+            ));
+        }
     }
     // Rich volatility rewards the structures that are short premium, cheap
     // volatility the ones that are long it; the ranking below applies that.
@@ -1201,6 +1226,12 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
     }
     let mut ranked = strategies(&candidates, &signal, &volatility, &market);
     if ranked.is_empty() {
+        if signal.direction == Direction::Neutral && volatility.regime == VolRegime::Fair {
+            return Err(
+                "The directional and volatility signals are neutral, so there is no supported options structure for this expiration."
+                    .into(),
+            );
+        }
         return Err(
             "The quoted strikes do not support a structure for this view. Try a different expiration.".into(),
         );
@@ -1351,6 +1382,79 @@ mod tests {
                 as_of: Some("2026-01-02".into()),
             },
         }
+    }
+
+    #[test]
+    fn one_sided_quotes_use_the_last_trade_or_are_excluded() {
+        let quote = |bid, ask, last| Quote {
+            contract: "TEST".into(),
+            expiration: "2026-02-20".into(),
+            strike: 100.0,
+            kind: Kind::Call,
+            bid,
+            ask,
+            last,
+            volume: None,
+            open_interest: None,
+            implied_volatility: None,
+        };
+
+        assert_eq!(quote(Some(1.0), None, Some(1.4)).mid(), Some(1.4));
+        assert_eq!(quote(None, Some(1.8), Some(1.4)).mid(), Some(1.4));
+        assert_eq!(quote(Some(1.0), None, None).mid(), None);
+        assert_eq!(quote(None, Some(1.8), None).mid(), None);
+        assert_eq!(quote(Some(1.0), Some(1.8), Some(1.4)).mid(), Some(1.4));
+    }
+
+    #[test]
+    fn vertical_strike_order_matches_the_named_direction() {
+        assert!(valid_debit_vertical(true, 100.0, 105.0));
+        assert!(!valid_debit_vertical(true, 105.0, 100.0));
+        assert!(valid_debit_vertical(false, 105.0, 100.0));
+        assert!(!valid_debit_vertical(false, 100.0, 105.0));
+
+        assert!(valid_credit_vertical(true, 100.0, 95.0));
+        assert!(!valid_credit_vertical(true, 95.0, 100.0));
+        assert!(valid_credit_vertical(false, 100.0, 105.0));
+        assert!(!valid_credit_vertical(false, 105.0, 100.0));
+    }
+
+    #[test]
+    fn neutral_straddle_requires_cheap_volatility() {
+        let chain = chain(100.0, 0.3, "2026-02-20", 49.0);
+        let market = Assumptions {
+            spot: 100.0,
+            rate: 0.04,
+            dividend_yield: 0.0,
+            years: 49.0 / DAYS_PER_YEAR,
+            sigma: 0.3,
+            drift: 0.0,
+        };
+        let candidates = candidates(&chain, "2026-02-20", &market, Direction::Neutral);
+        let signal = Signal {
+            fundamental: None,
+            momentum: None,
+            composite: 0.0,
+            direction: Direction::Neutral,
+            conviction: 0.0,
+            drivers: vec![],
+        };
+        let volatility = |regime| Volatility {
+            realized30: Some(0.3),
+            realized90: Some(0.3),
+            realized252: Some(0.3),
+            implied_atm: Some(0.3),
+            variance_premium: Some(0.0),
+            forecast: 0.3,
+            regime,
+        };
+
+        assert!(strategies(&candidates, &signal, &volatility(VolRegime::Fair), &market).is_empty());
+        assert!(
+            strategies(&candidates, &signal, &volatility(VolRegime::Cheap), &market)
+                .iter()
+                .any(|strategy| strategy.name == "Long straddle")
+        );
     }
 
     #[test]
