@@ -1273,6 +1273,7 @@ fn strategies(
     (built, notes)
 }
 
+const CANDIDATE_LIMIT_PER_MONEYNESS: usize = 10;
 const ALTERNATIVE_LIMIT: usize = 3;
 /// How far down the delta-ordered list of eligible contracts the search will
 /// go looking for one that fits the premium budget.
@@ -1457,7 +1458,7 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
         sigma: forecast_sigma,
         drift,
     };
-    let candidates = candidates(chain, &expiration, &market, signal.direction, &constraints);
+    let mut candidates = candidates(chain, &expiration, &market, signal.direction, &constraints);
     if candidates.is_empty() {
         return Err("No contracts in this expiration carry a usable quote.".into());
     }
@@ -1500,6 +1501,20 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
     warnings.push(
         "Model output from end-of-day data, not investment advice, and not a live quote. Options can expire worthless.".into(),
     );
+    // Keep the response bounded without allowing the score ordering to erase
+    // an entire filter option. `candidates` is already score sorted, so retain
+    // the best contracts from each moneyness bucket in that same order.
+    let mut bucket_counts = [0usize; 3];
+    candidates.retain(|candidate| {
+        let bucket = match candidate.moneyness {
+            Moneyness::Itm => 0,
+            Moneyness::Atm => 1,
+            Moneyness::Otm => 2,
+        };
+        let keep = bucket_counts[bucket] < CANDIDATE_LIMIT_PER_MONEYNESS;
+        bucket_counts[bucket] += usize::from(keep);
+        keep
+    });
     Ok(Outlook {
         ticker: chain.ticker.clone(),
         name: input.report.name.clone(),
@@ -1519,9 +1534,9 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
         forecast,
         recommendation,
         alternatives: ranked,
-        // The browser filters this collection by moneyness. Keep every usable
-        // quote so a lower-ranked bucket is not mistaken for an empty one and
-        // the "all strikes" view lives up to its name.
+        // The browser filters this collection by moneyness. Keep the best
+        // quotes in every bucket so a lower-ranked bucket is not mistaken for
+        // an empty one.
         candidates,
         expirations: chain.expirations.clone(),
         warnings,
@@ -1876,11 +1891,17 @@ mod tests {
             assert_eq!(shown("Vega"), Some(leg.greeks.vega));
             assert_eq!(shown("Rho"), Some(leg.greeks.rho));
         }
-        // The table's moneyness controls operate on this response, so it must
-        // retain every usable quote rather than only the highest-ranked few.
-        assert_eq!(outlook.candidates.len(), 26);
+        // Bound the response per bucket rather than globally so every table
+        // filter has something to display without returning the whole chain.
+        assert_eq!(outlook.candidates.len(), 22);
         for wanted in [Moneyness::Itm, Moneyness::Atm, Moneyness::Otm] {
-            assert!(outlook.candidates.iter().any(|c| c.moneyness == wanted));
+            let bucket_size = outlook
+                .candidates
+                .iter()
+                .filter(|c| c.moneyness == wanted)
+                .count();
+            assert!(bucket_size > 0);
+            assert!(bucket_size <= CANDIDATE_LIMIT_PER_MONEYNESS);
         }
         // Every candidate's Greeks must be self-consistent with its own quote.
         for candidate in &outlook.candidates {
