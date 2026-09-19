@@ -539,9 +539,14 @@ export function OptionsOutlookPanel({
                     view
                   </h3>
                   <p>
-                    {outlook.signal.direction} ·{" "}
-                    {percent(outlook.signal.conviction)} conviction ·{" "}
-                    {outlook.volatility.regime} volatility
+                    <span className="capitalize">
+                      {outlook.signal.direction}
+                    </span>{" "}
+                    · {percent(outlook.signal.conviction)} conviction ·{" "}
+                    <span className="capitalize">
+                      {outlook.volatility.regime}
+                    </span>{" "}
+                    volatility
                   </p>
                 </div>
                 <Badge variant="outline">{money(outlook.spot)}</Badge>
