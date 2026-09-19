@@ -518,5 +518,22 @@ test("options outlook downloads the chain only on request and ranks structures f
   await expect(delta).toContainText(/\d+\.\d{4} · \d+\.\d{4}/);
   await expect(page.getByText(/Model assumptions & limits/)).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
+
+  // The panel takes the width it is given: the full dashboard column on a
+  // desktop, and no horizontal page scroll on a phone.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const columns = await page.evaluate(() => ({
+    panel: document.querySelector(".options-panel")?.getBoundingClientRect()
+      .width,
+    tabs: document.querySelector(".dashboard-tabs")?.getBoundingClientRect()
+      .width,
+  }));
+  expect(columns.panel).toBe(columns.tabs);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
   expect(errors).toEqual([]);
 });

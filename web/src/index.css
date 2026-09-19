@@ -985,8 +985,11 @@
     width: 190px;
     margin: 0;
   }
+  /* A fixed field width would be the form's minimum, so the header could not
+     give it back any space on the narrowest phones; let it take what is left
+     of the form instead. */
   .compact input {
-    width: 125px;
+    flex: 1;
   }
   .compact .search-icon {
     width: 14px;
@@ -1173,10 +1176,13 @@
   color: var(--muted-foreground);
 }
 @media (max-width: 640px) {
+  /* The brand keeps its own width, so the actions are what has to give on the
+     narrowest phones; the compact search field flexes to match. */
   .header-actions {
     gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
+    min-width: 0;
   }
   .header-actions .header-label {
     display: none;
@@ -1203,15 +1209,20 @@
 .option-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 11px;
   color: var(--muted-foreground);
 }
+/* Contract labels carry a full option symbol, so the select's own intrinsic
+   width is far wider than a phone. It shrinks instead of widening the card. */
 .option-controls select {
   background: var(--muted);
   border: 1px solid var(--border);
   border-radius: 6px;
   height: 32px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 26px 0 11px;
   color: var(--foreground);
 }
@@ -1222,7 +1233,7 @@
   border-color: var(--border);
   background: var(--muted);
 }
-.option-intro {
+.option-intro p {
   max-width: none;
 }
 .option-summary {
@@ -1259,10 +1270,10 @@
   font-size: 11px;
   margin-top: 6px;
 }
-/* The engine emits its direction and volatility regime as lowercase words;
-   only those are title-cased, never the sentences around them. */
-.option-strategy-heading [data-slot="badge"],
-.option-signal .option-strategy-heading p {
+/* The engine emits its direction and volatility regime as lowercase words.
+   Only those are title-cased: the badge here, and the two spans the signal
+   sentence wraps them in — never the sentence itself. */
+.option-strategy-heading [data-slot="badge"] {
   text-transform: capitalize;
 }
 .option-rationale {
@@ -1329,7 +1340,7 @@
 }
 .option-alternatives {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 16px;
 }
 .leg-buy {
@@ -1342,7 +1353,7 @@
 }
 @media (max-width: 1000px) {
   .option-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 700px) {
@@ -1350,7 +1361,11 @@
   .option-drivers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .option-controls {
+  .option-strategy-heading {
+    flex-wrap: wrap;
+  }
+  .option-controls,
+  .option-calculation .option-controls select {
     width: 100%;
   }
   .options-panel table {
@@ -1385,9 +1400,12 @@
   font-size: 14px;
 }
 /* Formulas are dense and break badly; keep them monospaced and let a long
-   substitution wrap inside its cell rather than widening the table. */
+   substitution wrap inside its cell rather than widening the table. The floor
+   is what keeps that wrapping readable: under it the column collapses to one
+   token per line, so the table scrolls inside its own container instead. */
 .option-formula {
   font-family: var(--font-mono, ui-monospace, monospace);
+  min-width: 150px;
   font-size: 10px;
   line-height: 1.7;
   white-space: normal;
