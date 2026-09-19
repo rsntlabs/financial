@@ -410,6 +410,14 @@ test("legacy Alpha statements open without a key while prices use the new provid
   await expect(page.locator(".metric-highlight .metric-value")).toHaveText(
     "100.0M",
   );
+  // Nothing of the balance sheet was reported, so the rings say which total is
+  // missing instead of drawing a circle out of nothing.
+  await page.getByRole("tab", { name: "Balance sheet", exact: true }).click();
+  await expect(
+    page.getByText("Total assets was not reported for this year", {
+      exact: false,
+    }),
+  ).toBeVisible();
 });
 
 test("typing a ticker shows a filtered dropdown with company names", async ({
@@ -457,6 +465,50 @@ test("concurrent tabs share first downloads", async ({ page, context }) => {
   await Promise.all([search(page), search(tab)]);
   expect(calls.filter((c) => c === "financials")).toHaveLength(1);
   expect(calls.filter((c) => c === "prices")).toHaveLength(1);
+});
+
+test("balance sheet rings break each section into shares of its own total", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await stub(page, []);
+  await page.goto("./");
+  await search(page);
+  await page.getByRole("tab", { name: "Balance sheet", exact: true }).click();
+
+  // Each ring is one section, drawn from the lines the table below reports.
+  const ring = (name: string) =>
+    page.locator(".composition-card").filter({ hasText: name });
+  const slice = (name: string, label: string) =>
+    ring(name).locator(".composition-legend > div", { hasText: label });
+  await expect(
+    page.getByRole("img", { name: /^Total assets: Cash & equivalents/ }),
+  ).toBeVisible();
+  // FY 2025: 1,500 of assets, half of it in property, and the 300 the reported
+  // lines do not name drawn as what is left rather than dropped.
+  await expect(ring("Total assets")).toContainText("1.5B");
+  await expect(slice("Total assets", "Net PP&E")).toContainText("750.0");
+  await expect(slice("Total assets", "Net PP&E")).toContainText("50.0%");
+  await expect(slice("Total assets", "Other assets")).toContainText("300.0");
+  await expect(slice("Total assets", "Other assets")).toContainText("20.0%");
+  await expect(slice("Total liabilities", "Long-term debt")).toContainText(
+    "40.0%",
+  );
+  await expect(slice("Stockholders equity", "Retained earnings")).toContainText(
+    "60.0%",
+  );
+  await expect(
+    slice("Stockholders equity", "Paid-in capital & reserves"),
+  ).toContainText("400.0");
+  await page.screenshot({ path: "test-results/balance.png", fullPage: true });
+
+  // The rings follow the year selector; the table keeps every year at once.
+  await page.getByLabel("Fiscal year", { exact: true }).selectOption("2023");
+  await expect(slice("Total assets", "Net PP&E")).toContainText("450.0");
+  await expect(slice("Total assets", "Net PP&E")).toContainText("50.0%");
+  await expect(page.getByRole("cell", { name: "750.0" })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("options outlook downloads the chain only on request and ranks structures from the Greeks", async ({

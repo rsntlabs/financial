@@ -53,6 +53,22 @@ not a service-worker offline application. Browser/profile/origin changes,
 private mode or storage eviction can affect persistence. CSV provides a portable
 export.
 
+## Balance sheet composition
+
+Above the balance-sheet table, three donut charts show assets, liabilities and
+equity as shares of their own totals for one fiscal year at a time. The slices
+are the lines the table already reports — cash, receivables, inventory and net
+PP&E inside assets; payables, current and long-term debt inside liabilities;
+retained earnings inside equity — and what those lines do not account for is
+drawn as one remaining slice rather than left out of the circle.
+
+The split is computed in `financial-core`, not in the browser, so the chart and
+the table can never disagree. Nothing is clamped or rescaled to make a circle
+close: a negative line (an accumulated deficit, treasury stock) or a set of
+lines that adds up to more than the total it sits inside is not a share of
+anything, so that ring is replaced by the reason it could not be drawn, and the
+rows below carry the figures.
+
 ## Options outlook
 
 The Options tab downloads a chain only when asked: chains are intraday quotes,

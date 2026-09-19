@@ -44,6 +44,7 @@ import {
 } from "@/components/financial-chart";
 import { StockPriceChart } from "@/components/stock-price-chart";
 import { OptionsOutlookPanel } from "@/components/options-outlook";
+import { BalanceComposition } from "@/components/balance-composition";
 import { analyze } from "@/lib/engine";
 import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
@@ -926,6 +927,7 @@ export default function App() {
                 <Statement section={report.statements[0]} report={report} />
               </TabsContent>
               <TabsContent value="balance">
+                <BalanceComposition report={report} />
                 <Statement section={report.statements[1]} report={report} />
               </TabsContent>
               <TabsContent value="cashflow">

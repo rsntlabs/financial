@@ -1,6 +1,7 @@
 //! Platform-independent parsing and financial calculations. This crate is built
 //! as wasm32-unknown-unknown; provider transport uses browser fetch on WASM.
 pub mod alpha;
+pub mod composition;
 pub mod dataset;
 pub mod greeks;
 pub mod options;
@@ -22,6 +23,9 @@ pub struct Report {
     pub years: Vec<i32>,
     pub points: Vec<Point>,
     pub statements: Vec<Section>,
+    /// The balance sheet as shares of its own totals, one entry per year in
+    /// `years`, for the rings the balance-sheet panel draws.
+    pub composition: Vec<composition::Composition>,
     pub warnings: Vec<String>,
     pub fetched_at: String,
     pub stream_names: Vec<String>,
@@ -268,6 +272,10 @@ pub fn analyze(
                 .collect(),
         })
         .collect();
+    let composed = years
+        .iter()
+        .map(|&y| composition::compose(y, ends.get(&y).cloned(), &|key| value(key, y)))
+        .collect();
     let mut report = Report {
         ticker: ticker.clone(),
         name: normalized["name"]
@@ -279,6 +287,7 @@ pub fn analyze(
         years,
         points,
         statements: sections,
+        composition: composed,
         warnings,
         fetched_at: payload["fetchedAt"].as_str().unwrap_or("").into(),
         stream_names: Vec::new(),
