@@ -257,6 +257,37 @@ pub struct Forecast {
     pub lower: f64,
     pub probability_above_spot: f64,
 }
+/// Where a strike sits against the spot price. Strikes within [`ATM_BAND`] of
+/// spot are at the money whichever way they lean, so a contract does not flip
+/// sides on a cent of drift.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Moneyness {
+    Itm,
+    Atm,
+    Otm,
+}
+/// Half-width of the at-the-money band, as a share of spot.
+pub const ATM_BAND: f64 = 0.02;
+impl Moneyness {
+    /// A call is in the money below spot and a put above it; a nonpositive or
+    /// unknown spot leaves every strike at the money rather than guessing.
+    pub fn of(kind: Kind, spot: f64, strike: f64) -> Self {
+        if !spot.is_finite() || spot <= 0.0 || (strike - spot).abs() <= ATM_BAND * spot {
+            return Moneyness::Atm;
+        }
+        let in_the_money = match kind {
+            Kind::Call => strike < spot,
+            Kind::Put => strike > spot,
+        };
+        if in_the_money {
+            Moneyness::Itm
+        } else {
+            Moneyness::Otm
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
@@ -264,6 +295,8 @@ pub struct Candidate {
     pub kind: Kind,
     pub expiration: String,
     pub strike: f64,
+    /// Where the strike sits against spot, for the panel's moneyness filter.
+    pub moneyness: Moneyness,
     pub mid: f64,
     pub bid: Option<f64>,
     pub ask: Option<f64>,
@@ -672,6 +705,7 @@ fn candidates(
                 kind: quote.kind,
                 expiration: quote.expiration.clone(),
                 strike: quote.strike,
+                moneyness: Moneyness::of(quote.kind, chain.spot, quote.strike),
                 mid,
                 bid: quote.bid,
                 ask: quote.ask,
@@ -2040,6 +2074,59 @@ mod tests {
         assert!(rows(500.0)
             .iter()
             .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65)));
+    }
+
+    #[test]
+    fn moneyness_reads_the_strike_against_spot_with_a_band_around_it() {
+        // A call is in the money below spot, a put above it, and the band
+        // around spot belongs to neither side.
+        assert_eq!(Moneyness::of(Kind::Call, 100.0, 90.0), Moneyness::Itm);
+        assert_eq!(Moneyness::of(Kind::Call, 100.0, 110.0), Moneyness::Otm);
+        assert_eq!(Moneyness::of(Kind::Put, 100.0, 110.0), Moneyness::Itm);
+        assert_eq!(Moneyness::of(Kind::Put, 100.0, 90.0), Moneyness::Otm);
+        for kind in [Kind::Call, Kind::Put] {
+            assert_eq!(Moneyness::of(kind, 100.0, 100.0), Moneyness::Atm);
+            assert_eq!(Moneyness::of(kind, 100.0, 98.0), Moneyness::Atm);
+            assert_eq!(Moneyness::of(kind, 100.0, 102.0), Moneyness::Atm);
+            // An unusable spot classifies nothing rather than guessing a side.
+            assert_eq!(Moneyness::of(kind, 0.0, 100.0), Moneyness::Atm);
+        }
+
+        let market = Assumptions {
+            spot: 100.0,
+            rate: 0.04,
+            dividend_yield: 0.0,
+            years: 714.0 / DAYS_PER_YEAR,
+            sigma: 0.12,
+            drift: 0.0,
+        };
+        let rows = candidates(
+            &leaps(),
+            "2027-12-17",
+            &market,
+            Direction::Neutral,
+            &Constraints {
+                max_premium: 100_000.0,
+                min_delta: 0.65,
+            },
+        );
+        assert!(!rows.is_empty());
+        for row in &rows {
+            assert_eq!(row.moneyness, Moneyness::of(row.kind, 100.0, row.strike));
+        }
+        // The panel filters on these tags, so the wire names are part of the
+        // contract with it.
+        assert_eq!(
+            serde_json::to_value([Moneyness::Itm, Moneyness::Atm, Moneyness::Otm]).unwrap(),
+            json!(["itm", "atm", "otm"])
+        );
+        // The panel filters on this, so each bucket has to be reachable.
+        for wanted in [Moneyness::Itm, Moneyness::Atm, Moneyness::Otm] {
+            assert!(
+                rows.iter().any(|c| c.moneyness == wanted),
+                "{wanted:?} is missing from the chain"
+            );
+        }
     }
 
     #[test]

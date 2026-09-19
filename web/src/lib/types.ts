@@ -146,11 +146,14 @@ export interface OptionsForecast {
   lower: number;
   probabilityAboveSpot: number;
 }
+/** Where a strike sits against spot: in, at, or out of the money. */
+export type Moneyness = "itm" | "atm" | "otm";
 export interface OptionCandidate {
   contract: string;
   kind: OptionKind;
   expiration: string;
   strike: number;
+  moneyness: Moneyness;
   mid: number;
   bid: Nullable;
   ask: Nullable;
