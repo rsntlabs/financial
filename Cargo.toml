@@ -4,4 +4,3 @@ resolver = "2"
 
 [patch.crates-io]
 yfinance-rs = { path = "vendor/yfinance-rs" }
-edgar-rs = { path = "vendor/edgar-rs" }

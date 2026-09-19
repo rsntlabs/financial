@@ -335,8 +335,9 @@ dependencies = [
 [[package]]
 name = "edgar-rs"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09d7e5b5d31b0fa71542c3716040472f3e517ce2864f51d300b60c9824fb0208"
 dependencies = [
- "futures-timer",
  "governor",
  "reqwest",
  "serde",
