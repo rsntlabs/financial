@@ -19,6 +19,15 @@ use std::collections::BTreeMap;
 
 const DEFAULT_HORIZON_DAYS: f64 = 45.0;
 const DEFAULT_RISK_FREE_RATE: f64 = 0.04;
+/// Most premium, in quote currency, a recommended structure may cost to open.
+const DEFAULT_MAX_PREMIUM: f64 = 3000.0;
+/// Smallest delta, in absolute value, the contract carrying the directional
+/// view may have. Deep-in-the-money contracts track the stock more closely and
+/// spend less of the premium on time value.
+const DEFAULT_MIN_DELTA: f64 = 0.65;
+/// Longest horizon a chain may be searched over. LEAPS are listed years out,
+/// so the horizon is not capped at a single year.
+const MAX_HORIZON_DAYS: f64 = 1825.0;
 /// Widest sensible drift the directional view may imply, annualized.
 const MAX_DRIFT: f64 = 0.30;
 const MIN_CONTRACTS_PER_EXPIRY: usize = 4;
@@ -124,12 +133,25 @@ pub struct Settings {
     /// Valuation date, `YYYY-MM-DD`. Defaults to the chain's fetch date.
     #[serde(default)]
     pub as_of: Option<String>,
+    /// Most premium, in quote currency, a recommended structure may cost to
+    /// open. Structures that collect premium are never limited by it.
+    #[serde(default = "default_max_premium")]
+    pub max_premium: f64,
+    /// Smallest absolute delta accepted on the contract that carries the view.
+    #[serde(default = "default_min_delta")]
+    pub min_delta: f64,
 }
 fn default_horizon() -> f64 {
     DEFAULT_HORIZON_DAYS
 }
 fn default_rate() -> f64 {
     DEFAULT_RISK_FREE_RATE
+}
+fn default_max_premium() -> f64 {
+    DEFAULT_MAX_PREMIUM
+}
+fn default_min_delta() -> f64 {
+    DEFAULT_MIN_DELTA
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -138,6 +160,8 @@ impl Default for Settings {
             risk_free_rate: DEFAULT_RISK_FREE_RATE,
             dividend_yield: None,
             as_of: None,
+            max_premium: DEFAULT_MAX_PREMIUM,
+            min_delta: DEFAULT_MIN_DELTA,
         }
     }
 }
@@ -248,6 +272,11 @@ pub struct Candidate {
     pub open_interest: Option<f64>,
     pub implied_volatility: f64,
     pub implied_source: &'static str,
+    /// What one contract costs at the mid, in quote currency.
+    pub premium: f64,
+    /// Whether this contract could carry the view on its own: it clears the
+    /// delta floor and one of it fits inside the premium budget.
+    pub eligible: bool,
     pub greeks: Greeks,
     /// The Black-Scholes derivation behind those Greeks, shown in the panel.
     pub working: Option<Workings>,
@@ -311,6 +340,9 @@ pub struct Outlook {
     pub risk_free_rate: f64,
     pub dividend_yield: f64,
     pub horizon_days: f64,
+    /// The limits the search ran under, echoed back with the result.
+    pub max_premium: f64,
+    pub min_delta: f64,
     pub signal: Signal,
     pub volatility: Volatility,
     pub forecast: Forecast,
@@ -525,14 +557,49 @@ fn liquidity_score(quote: &Quote) -> f64 {
     (0.55 * depth + 0.45 * spread).clamp(0.0, 1.0)
 }
 
+/// The limits the user put on the search: how much premium a structure may
+/// cost to open, and how much delta the contract carrying the view must have.
+/// They bound what may be recommended; they never change how anything is
+/// priced, so every Greek and probability is the same number with or without
+/// them.
+#[derive(Clone, Copy, Debug)]
+struct Constraints {
+    max_premium: f64,
+    min_delta: f64,
+}
+impl Constraints {
+    /// Whether a structure's opening cost fits the budget. A credit structure
+    /// has a negative debit and is therefore never limited by it.
+    fn affordable(&self, net_debit: f64) -> bool {
+        net_debit <= self.max_premium + EPSILON
+    }
+    /// Whether a contract may carry the directional view on its own. Short
+    /// legs and protective wings are chosen by the shape of the structure
+    /// instead: a credit spread's wing is bought precisely because it is far
+    /// out of the money, so the floor cannot apply to it.
+    fn carries_view(&self, delta: f64) -> bool {
+        delta.abs() + EPSILON >= self.min_delta
+    }
+}
+/// Slack for comparing money and deltas against a user-entered limit, so a
+/// contract is never rejected by floating-point dust alone.
+const EPSILON: f64 = 1e-9;
+
 /// How well a contract expresses the view: a directional trade wants real
 /// delta without paying for deep-in-the-money intrinsic value, while a neutral
-/// view wants the wings.
-fn alignment_score(direction: Direction, kind: Kind, delta: f64) -> f64 {
+/// view wants the wings. The user's delta floor raises the ideal and rules out
+/// everything below it, so the ranking agrees with what may be recommended.
+fn alignment_score(direction: Direction, kind: Kind, delta: f64, constraints: &Constraints) -> f64 {
     let target =
         |ideal: f64, width: f64| (1.0 - (delta.abs() - ideal).abs() / width).clamp(0.0, 1.0);
     match (direction, kind) {
-        (Direction::Bullish, Kind::Call) | (Direction::Bearish, Kind::Put) => target(0.55, 0.55),
+        (Direction::Bullish, Kind::Call) | (Direction::Bearish, Kind::Put) => {
+            if constraints.carries_view(delta) {
+                target(0.55f64.max(constraints.min_delta), 0.55)
+            } else {
+                0.0
+            }
+        }
         (Direction::Bullish, Kind::Put) | (Direction::Bearish, Kind::Call) => {
             // The opposite side is only interesting as a wing or short premium.
             0.35 * target(0.25, 0.35)
@@ -546,6 +613,7 @@ fn candidates(
     expiration: &str,
     market: &Assumptions,
     direction: Direction,
+    constraints: &Constraints,
 ) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = chain
         .quotes
@@ -593,7 +661,8 @@ fn candidates(
             );
             let edge = ((model.value - mid) / mid).clamp(-2.0, 2.0);
             let liquidity = liquidity_score(quote);
-            let alignment = alignment_score(direction, quote.kind, greeks.delta);
+            let alignment = alignment_score(direction, quote.kind, greeks.delta, constraints);
+            let premium = mid * CONTRACT_MULTIPLIER;
             let breakeven = match quote.kind {
                 Kind::Call => quote.strike + mid,
                 Kind::Put => quote.strike - mid,
@@ -611,6 +680,8 @@ fn candidates(
                 open_interest: quote.open_interest,
                 implied_volatility: sigma,
                 implied_source: source,
+                premium,
+                eligible: constraints.carries_view(greeks.delta) && constraints.affordable(premium),
                 greeks,
                 working: workings(
                     quote.kind,
@@ -655,6 +726,34 @@ fn candidates(
         .collect();
     candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
     candidates
+}
+
+/// The contracts allowed to carry the directional view, nearest the wanted
+/// delta first. The wanted delta is pulled out to the user's floor when the
+/// structure would otherwise aim below it, so a 0.65 floor buys a 0.65-delta
+/// contract rather than the deepest one in the chain.
+fn carriers<'a>(
+    candidates: &'a [Candidate],
+    kind: Kind,
+    delta: f64,
+    constraints: &Constraints,
+) -> Vec<&'a Candidate> {
+    let wanted = if delta < 0.0 {
+        delta.min(-constraints.min_delta)
+    } else {
+        delta.max(constraints.min_delta)
+    };
+    let mut carriers: Vec<&Candidate> = candidates
+        .iter()
+        .filter(|c| c.kind == kind && c.mid > 0.0 && constraints.carries_view(c.greeks.delta))
+        .collect();
+    carriers.sort_by(|a, b| {
+        let distance = |c: &Candidate| (c.greeks.delta - wanted).abs();
+        distance(a)
+            .total_cmp(&distance(b))
+            .then(b.liquidity.total_cmp(&a.liquidity))
+    });
+    carriers
 }
 
 fn pick(candidates: &[Candidate], kind: Kind, delta: f64) -> Option<&Candidate> {
@@ -724,6 +823,7 @@ fn evaluate(
     direction: Direction,
     legs: Vec<Leg>,
     market: &Assumptions,
+    constraints: &Constraints,
 ) -> Option<Strategy> {
     if legs.is_empty() || legs.iter().any(|l| !l.mid.is_finite() || l.mid <= 0.0) {
         return None;
@@ -732,6 +832,12 @@ fn evaluate(
         .iter()
         .map(|l| sign(l) * f64::from(l.contracts) * l.mid)
         .sum();
+    // The premium budget is a hard limit on what may be recommended: a
+    // structure that cannot be opened for it is not a recommendation, however
+    // well it scores.
+    if !constraints.affordable(net_debit_share * CONTRACT_MULTIPLIER) {
+        return None;
+    }
     let mut kinks: Vec<f64> = legs.iter().map(|l| l.strike).collect();
     kinks.push(0.0);
     kinks.push((market.spot * 4.0).max(kinks.iter().fold(0.0, |a: f64, b| a.max(*b)) * 2.0));
@@ -862,24 +968,29 @@ fn money(value: f64) -> String {
     format!("{:.0}", value.abs())
 }
 
-/// Builds every structure that is consistent with the view, in the order the
-/// volatility regime prefers them. Ranking then picks among them.
+fn push(built: &mut Vec<Strategy>, strategy: Option<Strategy>) {
+    if let Some(strategy) = strategy {
+        built.push(strategy);
+    }
+}
+
+/// Builds every structure that is consistent with the view and with the user's
+/// limits, in the order the volatility regime prefers them. Ranking then picks
+/// among them. Anything the limits ruled out is explained in the returned
+/// notes, so a short list of structures is never silent about why.
 fn strategies(
     candidates: &[Candidate],
     signal: &Signal,
     volatility: &Volatility,
     market: &Assumptions,
-) -> Vec<Strategy> {
+    constraints: &Constraints,
+) -> (Vec<Strategy>, Vec<String>) {
     let (long_side, short_side, rich) = match signal.direction {
         Direction::Bearish => (Kind::Put, Kind::Call, volatility.regime == VolRegime::Rich),
         _ => (Kind::Call, Kind::Put, volatility.regime == VolRegime::Rich),
     };
     let mut built = Vec::new();
-    let mut add = |strategy: Option<Strategy>| {
-        if let Some(strategy) = strategy {
-            built.push(strategy);
-        }
-    };
+    let mut notes: Vec<String> = Vec::new();
     let vol_note = match (
         volatility.implied_atm,
         volatility.realized30.or(volatility.realized90),
@@ -901,10 +1012,21 @@ fn strategies(
     };
     if signal.direction != Direction::Neutral {
         let bullish = signal.direction == Direction::Bullish;
+        // Only the bought contract that expresses the view has to clear the
+        // delta floor. They are ordered by distance from the delta the
+        // structure wants, so the first one that fits the budget is the
+        // closest affordable expression of the view.
+        let carriers = carriers(
+            candidates,
+            long_side,
+            if bullish { 0.6 } else { -0.6 },
+            constraints,
+        );
+        let mut carried = false;
         // Outright long premium: the cleanest expression when volatility is
         // not being overcharged.
-        if let Some(long) = pick(candidates, long_side, if bullish { 0.6 } else { -0.6 }) {
-            add(evaluate(
+        for long in carriers.iter().copied().take(CARRIER_ATTEMPTS) {
+            let outright = evaluate(
                 if bullish { "Long call" } else { "Long put" },
                 format!(
                     "Buy the {:.2} strike {} expiring {}",
@@ -917,40 +1039,78 @@ fn strategies(
                     signal.direction.label(),
                     signal.conviction * 100.0,
                     long.greeks.delta,
-                    money(long.mid * CONTRACT_MULTIPLIER),
+                    money(long.premium),
                 ),
                 signal.direction,
                 vec![leg("buy", long, 1)],
                 market,
-            ));
-            // Debit spread: caps the payoff but sells back part of the vega and
-            // theta, which is what makes it the better trade when vol is rich.
-            if let Some(short) = pick(candidates, long_side, if bullish { 0.28 } else { -0.28 }) {
+                constraints,
+            );
+            if let Some(strategy) = outright {
+                built.push(strategy);
+                carried = true;
+                break;
+            }
+        }
+        // Debit spread: caps the payoff but sells back part of the vega and
+        // theta, which is what makes it the better trade when vol is rich. The
+        // short leg also pays for part of the long one, so a spread can fit a
+        // budget the outright cannot.
+        if let Some(short) = pick(candidates, long_side, if bullish { 0.28 } else { -0.28 }) {
+            for long in carriers.iter().copied().take(CARRIER_ATTEMPTS) {
                 // Delta is normally monotonic by strike, but stale or skewed
                 // IV can violate that assumption. The named payoff requires
                 // this ordering regardless of the selected deltas.
-                if valid_debit_vertical(bullish, long.strike, short.strike) {
-                    add(evaluate(
-                        if bullish { "Bull call spread" } else { "Bear put spread" },
-                        format!(
-                            "Buy the {:.2} {} and sell the {:.2} {}, expiring {}",
-                            long.strike,
-                            long.kind.label(),
-                            short.strike,
-                            short.kind.label(),
-                            long.expiration
-                        ),
-                        format!(
-                            "Financing the long {} with a further out-of-the-money short one cuts the premium to {} and sells back most of the vega. {vol_note}",
-                            long.kind.label(),
-                            money((long.mid - short.mid) * CONTRACT_MULTIPLIER),
-                        ),
-                        signal.direction,
-                        vec![leg("buy", long, 1), leg("sell", short, 1)],
-                        market,
-                    ));
+                if !valid_debit_vertical(bullish, long.strike, short.strike) {
+                    continue;
+                }
+                let spread = evaluate(
+                    if bullish { "Bull call spread" } else { "Bear put spread" },
+                    format!(
+                        "Buy the {:.2} {} and sell the {:.2} {}, expiring {}",
+                        long.strike,
+                        long.kind.label(),
+                        short.strike,
+                        short.kind.label(),
+                        long.expiration
+                    ),
+                    format!(
+                        "Financing the long {} with a further out-of-the-money short one cuts the premium to {} and sells back most of the vega. {vol_note}",
+                        long.kind.label(),
+                        money((long.mid - short.mid) * CONTRACT_MULTIPLIER),
+                    ),
+                    signal.direction,
+                    vec![leg("buy", long, 1), leg("sell", short, 1)],
+                    market,
+                    constraints,
+                );
+                if let Some(strategy) = spread {
+                    built.push(strategy);
+                    carried = true;
+                    break;
                 }
             }
+        }
+        if carriers.is_empty() {
+            notes.push(format!(
+                "No {} in this expiration reaches the {:.2} minimum delta, so nothing here can carry the {} view.",
+                long_side.label(),
+                constraints.min_delta,
+                signal.direction.label(),
+            ));
+        } else if !carried {
+            notes.push(format!(
+                "No long {} structure fits a {} premium budget: the cheapest contract at or above {:.2} delta costs {}.",
+                long_side.label(),
+                money(constraints.max_premium),
+                constraints.min_delta,
+                money(
+                    carriers
+                        .iter()
+                        .map(|c| c.premium)
+                        .fold(f64::INFINITY, f64::min)
+                ),
+            ));
         }
         // Credit spread on the opposite side: gets paid for the view and for
         // rich volatility, with defined risk.
@@ -959,7 +1119,7 @@ fn strategies(
             pick(candidates, short_side, if bullish { -0.14 } else { 0.14 }),
         ) {
             if valid_credit_vertical(bullish, short.strike, wing.strike) {
-                add(evaluate(
+                push(&mut built, evaluate(
                     if bullish { "Bull put spread" } else { "Bear call spread" },
                     format!(
                         "Sell the {:.2} {} and buy the {:.2} {}, expiring {}",
@@ -978,6 +1138,7 @@ fn strategies(
                     signal.direction,
                     vec![leg("sell", short, 1), leg("buy", wing, 1)],
                     market,
+                    constraints,
                 ));
             }
         }
@@ -990,7 +1151,7 @@ fn strategies(
             pick(candidates, Kind::Call, 0.1),
         ) {
             if long_put.strike < short_put.strike && short_call.strike < long_call.strike {
-                add(evaluate(
+                push(&mut built, evaluate(
                     "Iron condor",
                     format!(
                         "Sell the {:.2} put and {:.2} call, buy the {:.2} put and {:.2} call, expiring {}",
@@ -1007,6 +1168,7 @@ fn strategies(
                         leg("buy", long_call, 1),
                     ],
                     market,
+                    constraints,
                 ));
             }
         }
@@ -1016,7 +1178,7 @@ fn strategies(
             pick(candidates, Kind::Put, -0.5),
         ) {
             // Cheap volatility with no directional view: own the movement itself.
-            add(evaluate(
+            push(&mut built, evaluate(
                 "Long straddle",
                 format!(
                     "Buy the {:.2} call and the {:.2} put, expiring {}",
@@ -1030,6 +1192,7 @@ fn strategies(
                 Direction::Neutral,
                 vec![leg("buy", call, 1), leg("buy", put, 1)],
                 market,
+                constraints,
             ));
         }
     }
@@ -1046,11 +1209,14 @@ fn strategies(
         };
         tilt(b).total_cmp(&tilt(a))
     });
-    built
+    (built, notes)
 }
 
 const CANDIDATE_LIMIT: usize = 16;
 const ALTERNATIVE_LIMIT: usize = 3;
+/// How far down the delta-ordered list of eligible contracts the search will
+/// go looking for one that fits the premium budget.
+const CARRIER_ATTEMPTS: usize = 8;
 
 /// Turns a report, a price history and one option chain into a ranked
 /// recommendation. Every assumption it makes is reported back in the result.
@@ -1092,8 +1258,19 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
         .filter(|d| (0.0..=0.5).contains(d))
         .unwrap_or(0.0);
     let horizon = finite(input.settings.horizon_days)
-        .filter(|d| (1.0..=1000.0).contains(d))
+        .filter(|d| (1.0..=MAX_HORIZON_DAYS).contains(d))
         .unwrap_or(DEFAULT_HORIZON_DAYS);
+    // A premium budget of zero would admit nothing, and a delta floor of one
+    // is unreachable, so both fall back to the default rather than silently
+    // emptying the search.
+    let constraints = Constraints {
+        max_premium: finite(input.settings.max_premium)
+            .filter(|p| *p > 0.0)
+            .unwrap_or(DEFAULT_MAX_PREMIUM),
+        min_delta: finite(input.settings.min_delta)
+            .filter(|d| (0.0..=0.95).contains(d))
+            .unwrap_or(DEFAULT_MIN_DELTA),
+    };
 
     // One expiry at a time: mixing expiries would mix different volatilities
     // and different amounts of time decay into the same payoff.
@@ -1220,12 +1397,20 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
         sigma: forecast_sigma,
         drift,
     };
-    let candidates = candidates(chain, &expiration, &market, signal.direction);
+    let candidates = candidates(chain, &expiration, &market, signal.direction, &constraints);
     if candidates.is_empty() {
         return Err("No contracts in this expiration carry a usable quote.".into());
     }
-    let mut ranked = strategies(&candidates, &signal, &volatility, &market);
+    let (mut ranked, notes) = strategies(&candidates, &signal, &volatility, &market, &constraints);
     if ranked.is_empty() {
+        // When the limits are what emptied the list, say which one and what to
+        // change; the user set them and can relax them.
+        if !notes.is_empty() {
+            return Err(format!(
+                "{} Raise the maximum premium, lower the minimum delta, or choose another expiration.",
+                notes.join(" ")
+            ));
+        }
         if signal.direction == Direction::Neutral && volatility.regime == VolRegime::Fair {
             return Err(
                 "The directional and volatility signals are neutral, so there is no supported options structure for this expiration."
@@ -1236,8 +1421,14 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
             "The quoted strikes do not support a structure for this view. Try a different expiration.".into(),
         );
     }
+    warnings.extend(notes);
     let recommendation = ranked.remove(0);
     ranked.truncate(ALTERNATIVE_LIMIT);
+    warnings.push(format!(
+        "Limits applied: a structure may cost at most {} to open, and the contract carrying the view holds at least {:.2} delta. Legs sold, and the wings bought to define their risk, are chosen by the structure rather than by that floor.",
+        money(constraints.max_premium),
+        constraints.min_delta,
+    ));
     warnings.push(format!(
         "Model assumptions: {:.1}% risk-free rate, {:.1}% dividend yield, {:.0}% forecast volatility, {:+.1}% annual drift from the {} view. Greeks are Black-Scholes values, not provider data.",
         rate * 100.0,
@@ -1263,6 +1454,8 @@ pub fn recommend(input: &Input) -> Result<Outlook, String> {
         risk_free_rate: rate,
         dividend_yield,
         horizon_days: horizon,
+        max_premium: constraints.max_premium,
+        min_delta: constraints.min_delta,
         signal,
         volatility,
         forecast,
@@ -1377,9 +1570,9 @@ mod tests {
             chain,
             settings: Settings {
                 horizon_days: 45.0,
-                risk_free_rate: 0.04,
-                dividend_yield: Some(0.0),
                 as_of: Some("2026-01-02".into()),
+                dividend_yield: Some(0.0),
+                ..Settings::default()
             },
         }
     }
@@ -1430,7 +1623,17 @@ mod tests {
             sigma: 0.3,
             drift: 0.0,
         };
-        let candidates = candidates(&chain, "2026-02-20", &market, Direction::Neutral);
+        let unlimited = Constraints {
+            max_premium: f64::INFINITY,
+            min_delta: DEFAULT_MIN_DELTA,
+        };
+        let candidates = candidates(
+            &chain,
+            "2026-02-20",
+            &market,
+            Direction::Neutral,
+            &unlimited,
+        );
         let signal = Signal {
             fundamental: None,
             momentum: None,
@@ -1449,12 +1652,27 @@ mod tests {
             regime,
         };
 
-        assert!(strategies(&candidates, &signal, &volatility(VolRegime::Fair), &market).is_empty());
-        assert!(
-            strategies(&candidates, &signal, &volatility(VolRegime::Cheap), &market)
-                .iter()
-                .any(|strategy| strategy.name == "Long straddle")
-        );
+        assert!(strategies(
+            &candidates,
+            &signal,
+            &volatility(VolRegime::Fair),
+            &market,
+            &unlimited,
+        )
+        .0
+        .is_empty());
+        // A straddle is not a directional trade, so the delta floor, which only
+        // governs the contract carrying a view, leaves it alone.
+        assert!(strategies(
+            &candidates,
+            &signal,
+            &volatility(VolRegime::Cheap),
+            &market,
+            &unlimited,
+        )
+        .0
+        .iter()
+        .any(|strategy| strategy.name == "Long straddle"));
     }
 
     #[test]
@@ -1570,6 +1788,177 @@ mod tests {
         // theta bleed bounded by the short leg.
         assert!(spread.net_delta > 0.0 && spread.net_gamma > 0.0);
     }
+    /// A LEAPS chain: a single expiration just short of two years out, priced
+    /// off the same Black-Scholes model as the shorter-dated fixture.
+    fn leaps() -> Chain {
+        chain(100.0, 0.12, "2027-12-17", 714.0)
+    }
+    fn limited(chain: Chain, horizon_days: f64, max_premium: f64, min_delta: f64) -> Input {
+        let mut input = input(report(0.3, 0.2), prices(400, 0.8, 0.25), chain);
+        input.settings = Settings {
+            horizon_days,
+            max_premium,
+            min_delta,
+            ..input.settings
+        };
+        input
+    }
+
+    #[test]
+    fn contracts_more_than_a_year_out_are_analyzed_at_their_own_time_to_expiry() {
+        let outlook = recommend(&limited(leaps(), 730.0, 3000.0, 0.65)).unwrap();
+        assert_eq!(outlook.horizon_days, 730.0);
+        assert_eq!(outlook.forecast.expiration, "2027-12-17");
+        assert_eq!(outlook.forecast.days_to_expiry, 714.0);
+        assert!(outlook.forecast.years > 1.9 && outlook.forecast.years < 2.0);
+        // Nothing about the horizon may leak into the pricing: every contract
+        // is priced at the years actually remaining on it.
+        for candidate in &outlook.candidates {
+            let working = candidate.working.as_ref().expect("a quoted contract");
+            assert!((working.inputs.years - outlook.forecast.years).abs() < 1e-9);
+            assert!((working.inputs.days - 714.0).abs() < 1e-9);
+        }
+        // Two years of time value is worth far more than six weeks of it.
+        let short = recommend(&limited(
+            chain(100.0, 0.12, "2026-02-20", 49.0),
+            45.0,
+            3000.0,
+            0.65,
+        ))
+        .unwrap();
+        let atm = |outlook: &Outlook| {
+            outlook
+                .candidates
+                .iter()
+                .filter(|c| c.kind == Kind::Call && c.strike == 100.0)
+                .map(|c| c.premium)
+                .next()
+                .expect("the at-the-money call is quoted in both chains")
+        };
+        assert!(atm(&outlook) > 3.0 * atm(&short));
+    }
+
+    #[test]
+    fn the_contract_carrying_the_view_honors_the_delta_floor_and_the_premium_budget() {
+        let bought = |outlook: &Outlook| -> Vec<Leg> {
+            outlook
+                .recommendation
+                .legs
+                .iter()
+                .chain(outlook.alternatives.iter().flat_map(|s| s.legs.iter()))
+                .filter(|l| l.action == "buy" && l.kind == Kind::Call)
+                .cloned()
+                .collect()
+        };
+        for (min_delta, budget) in [(0.65, 3000.0), (0.85, 3000.0)] {
+            let outlook = recommend(&limited(leaps(), 730.0, budget, min_delta)).unwrap();
+            assert_eq!(
+                (outlook.min_delta, outlook.max_premium),
+                (min_delta, budget)
+            );
+            let legs = bought(&outlook);
+            assert!(!legs.is_empty(), "a bullish view buys calls");
+            for leg in legs {
+                assert!(
+                    leg.greeks.delta >= min_delta,
+                    "{:.2} delta is under the {min_delta} floor",
+                    leg.greeks.delta
+                );
+            }
+            for strategy in outlook.alternatives.iter().chain([&outlook.recommendation]) {
+                assert!(
+                    strategy.net_debit <= budget,
+                    "{} costs {}",
+                    strategy.name,
+                    strategy.net_debit
+                );
+            }
+            // The floor travels with the ranking, so the contracts table cannot
+            // lead with a contract no structure is allowed to buy.
+            assert!(outlook
+                .candidates
+                .iter()
+                .all(|c| c.eligible == (c.greeks.delta.abs() >= min_delta && c.premium <= budget)));
+        }
+    }
+
+    #[test]
+    fn eligibility_reads_the_size_of_a_delta_and_the_cost_of_the_contract() {
+        let market = Assumptions {
+            spot: 100.0,
+            rate: 0.04,
+            dividend_yield: 0.0,
+            years: 714.0 / DAYS_PER_YEAR,
+            sigma: 0.12,
+            drift: 0.0,
+        };
+        let rows = |max_premium| {
+            candidates(
+                &leaps(),
+                "2027-12-17",
+                &market,
+                Direction::Neutral,
+                &Constraints {
+                    max_premium,
+                    min_delta: 0.65,
+                },
+            )
+        };
+        // A put's delta is negative, so it is the size of it that has to clear
+        // the floor: an in-the-money put qualifies exactly as a call does.
+        let affordable = rows(100_000.0);
+        for kind in [Kind::Call, Kind::Put] {
+            assert!(affordable
+                .iter()
+                .any(|c| c.kind == kind && c.eligible && c.greeks.delta.abs() > 0.65));
+        }
+        assert!(affordable
+            .iter()
+            .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65)));
+        // The budget bites on its own: the same contracts, priced the same
+        // way, with only the amount that may be spent changed.
+        assert!(rows(500.0)
+            .iter()
+            .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65 && c.premium <= 500.0)));
+    }
+
+    #[test]
+    fn a_budget_no_long_structure_fits_leaves_the_credit_structures_and_says_why() {
+        let outlook = recommend(&limited(leaps(), 730.0, 200.0, 0.65)).unwrap();
+        for strategy in outlook.alternatives.iter().chain([&outlook.recommendation]) {
+            assert!(strategy.net_debit <= 200.0, "{}", strategy.name);
+            assert_ne!(strategy.name, "Long call");
+        }
+        assert!(
+            outlook
+                .warnings
+                .iter()
+                .any(|w| w.contains("premium budget") && w.contains("0.65 delta")),
+            "{:?}",
+            outlook.warnings
+        );
+        // With no puts to sell either, nothing at all fits: the failure names
+        // the limits rather than the chain, because the limits are what the
+        // user can change.
+        let mut calls_only = leaps();
+        calls_only.quotes.retain(|q| q.kind == Kind::Call);
+        let error = recommend(&limited(calls_only, 730.0, 1.0, 0.65)).unwrap_err();
+        assert!(error.contains("premium budget"), "{error}");
+        assert!(error.contains("Raise the maximum premium"), "{error}");
+    }
+
+    #[test]
+    fn unusable_limits_fall_back_to_the_defaults() {
+        let outlook = recommend(&limited(leaps(), 730.0, 0.0, 4.0)).unwrap();
+        assert_eq!(outlook.max_premium, DEFAULT_MAX_PREMIUM);
+        assert_eq!(outlook.min_delta, DEFAULT_MIN_DELTA);
+        // An unset request gets the same defaults, not an unlimited search.
+        let settings: Settings = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(settings.max_premium, 3000.0);
+        assert_eq!(settings.min_delta, 0.65);
+        assert_eq!(settings.horizon_days, DEFAULT_HORIZON_DAYS);
+    }
+
     #[test]
     fn rejects_unusable_chains_and_falls_back_to_solved_implied_volatility() {
         let mut broken = chain(100.0, 0.3, "2026-02-20", 49.0);

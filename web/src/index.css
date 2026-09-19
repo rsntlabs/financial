@@ -1351,6 +1351,12 @@
   color: var(--destructive);
   font-weight: 550;
 }
+/* Contracts outside the premium or delta limits stay in the table, since they
+   are still the market the recommendation was chosen from, but they read as
+   context rather than as something that could be bought. */
+.candidate-excluded {
+  opacity: 0.55;
+}
 @media (max-width: 1000px) {
   .option-summary {
     grid-template-columns: minmax(0, 1fr);

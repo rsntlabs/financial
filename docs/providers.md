@@ -110,8 +110,19 @@ an expiry payoff is piecewise linear with kinks only at the strikes, so maxima,
 minima and breakevens are solved rather than sampled, and probabilities
 integrate a lognormal with the stated drift and forecast volatility.
 
+The user's own limits bound that search without touching the pricing: a
+structure whose net debit exceeds the maximum premium is never recommended, and
+the contract bought to carry the directional view must hold at least the
+minimum delta, which also raises the ideal delta the contract ranking aims at.
+A credit structure has no debit to cap, and short legs and protective wings are
+chosen by the structure, so neither is bound by those limits. When the limits
+are what emptied the list, the failure names them rather than blaming the
+chain, and a structure dropped for cost is reported alongside the cheapest
+contract that would have carried the view.
+
 Assumptions travel with the result (risk-free rate, dividend yield, forecast
-volatility, drift, expiration) and are shown in the panel. The output is a model
+volatility, drift, expiration, maximum premium, minimum delta) and are shown in
+the panel. The output is a model
 result for a single expiration at expiry, before commissions, assignment and
 early exercise — not investment advice.
 
