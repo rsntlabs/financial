@@ -595,6 +595,27 @@ test("options outlook downloads the chain only on request and ranks structures f
   ).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
 
+  // The contract table is filtered by moneyness and opens on the in-the-money
+  // strikes; the chain is already in the browser, so switching sides re-filters
+  // what is on screen without downloading it again.
+  const contracts = page.locator("table", {
+    has: page.getByRole("columnheader", { name: "P(ITM)" }),
+  });
+  const atTheMoney = contracts.getByRole("cell", {
+    name: "126.00",
+    exact: true,
+  });
+  const moneyness = page.getByLabel("Moneyness");
+  await expect(moneyness).toHaveValue("itm");
+  await expect(atTheMoney).toHaveCount(0);
+  await moneyness.selectOption("atm");
+  await expect(atTheMoney).toHaveCount(2);
+  await moneyness.selectOption("otm");
+  await expect(atTheMoney).toHaveCount(0);
+  await moneyness.selectOption("all");
+  await expect(atTheMoney).toHaveCount(2);
+  expect(calls.filter((c) => c === "options")).toHaveLength(1);
+
   // A horizon beyond a year, a premium budget and a delta floor are all the
   // user's to set here: the horizon looks forward, at an expiration the chain
   // has to list, so it is the panel's own rather than the dashboard's span.
