@@ -507,9 +507,15 @@
   background: var(--card);
   box-shadow: none;
 }
+/* The sparkline is drawn by a chart that re-measures itself only once a
+   resize observer reports the card's new width, so for a frame after the
+   viewport narrows it still carries the width it had before. Clipping keeps
+   that frame inside the card instead of letting it widen the page, the same
+   reason .chart-card clips its own chart. */
 .metric-trend {
   height: 28px;
   margin-top: 10px;
+  overflow: hidden;
 }
 .metric-highlight {
   border-color: var(--border);
