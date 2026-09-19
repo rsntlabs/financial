@@ -42,6 +42,27 @@ function stubYahooSession(extra: (url: string, init?: RequestInit) => Response |
   });
 }
 
+// A stand-in for the Workers Cache API: enough of it to tell a hit from a
+// miss, and to show what the Worker decided to keep.
+function stubEdgeCache() {
+  const entries = new Map<string, Response>();
+  const cache = {
+    match: vi.fn(async (key: Request) => entries.get(key.url)?.clone()),
+    put: vi.fn(async (key: Request, response: Response) => {
+      entries.set(key.url, response);
+    }),
+  };
+  vi.stubGlobal("caches", { default: cache });
+  return { cache, entries };
+}
+
+// Real Workers always pass one; the fallback path (no ctx) is exercised by the
+// tests that leave it out. Only waitUntil is reached from here, so the rest of
+// the runtime's context is not stood up.
+const CTX = {
+  waitUntil: (work: Promise<unknown>) => void work,
+} as unknown as ExecutionContext;
+
 // startWorker stubs the global fetch; restoreAllMocks would not undo that.
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -272,5 +293,217 @@ describe("request validation", () => {
     const response = await worker.fetch(new Request("https://proxy.test/unknown"), ENV);
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("edge cache", () => {
+  function stubChart(body: unknown = { chart: {} }) {
+    let upstreamCalls = 0;
+    const fetchMock = stubYahooSession((url) => {
+      if (url.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/AAPL")) {
+        upstreamCalls += 1;
+        return jsonResponse(body);
+      }
+      return undefined;
+    });
+    return { fetchMock, calls: () => upstreamCalls };
+  }
+
+  it("answers a repeat request from the edge instead of the upstream", async () => {
+    const { cache } = stubEdgeCache();
+    const { fetchMock, calls } = stubChart();
+    const worker = await startWorker(fetchMock);
+
+    const first = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL?range=max"),
+      ENV,
+      CTX,
+    );
+    const second = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL?range=max"),
+      ENV,
+      CTX,
+    );
+
+    expect(first.headers.get("x-proxy-cache")).toBe("MISS");
+    expect(second.headers.get("x-proxy-cache")).toBe("HIT");
+    expect(await second.json()).toEqual({ chart: {} });
+    expect(calls()).toBe(1);
+    expect(cache.put).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the edge copy under a freshness rule, and the browser's under none", async () => {
+    const { entries } = stubEdgeCache();
+    const { fetchMock } = stubChart();
+    const worker = await startWorker(fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL"),
+      ENV,
+      CTX,
+    );
+
+    // The browser must always come back to the Worker: Refresh price is the
+    // user's way of asking for something newer than what they have.
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const [kept] = [...entries.values()];
+    expect(kept?.headers.get("cache-control")).toBe("public, max-age=900");
+  });
+
+  it("keys on the question, not the session: a stale client crumb still hits", async () => {
+    const { entries } = stubEdgeCache();
+    const { fetchMock, calls } = stubChart();
+    const worker = await startWorker(fetchMock);
+
+    await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL?range=max&crumb=stale"),
+      ENV,
+      CTX,
+    );
+    const second = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL?crumb=other&range=max"),
+      ENV,
+      CTX,
+    );
+
+    expect(second.headers.get("x-proxy-cache")).toBe("HIT");
+    expect(calls()).toBe(1);
+    expect([...entries.keys()]).toEqual(["https://proxy.test/yahoo/chart/AAPL?range=max"]);
+  });
+
+  it("never caches an option chain, since those are intraday quotes", async () => {
+    const { cache } = stubEdgeCache();
+    let upstreamCalls = 0;
+    const fetchMock = stubYahooSession((url) => {
+      if (url.startsWith("https://query1.finance.yahoo.com/v7/finance/options/AAPL")) {
+        upstreamCalls += 1;
+        return jsonResponse({ optionChain: { result: [] } });
+      }
+      return undefined;
+    });
+    const worker = await startWorker(fetchMock);
+
+    const first = await worker.fetch(
+      new Request("https://proxy.test/yahoo/options/AAPL"),
+      ENV,
+      CTX,
+    );
+    await worker.fetch(new Request("https://proxy.test/yahoo/options/AAPL"), ENV, CTX);
+
+    expect(upstreamCalls).toBe(2);
+    expect(cache.match).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
+    expect(first.headers.get("x-proxy-cache")).toBeNull();
+    expect(first.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("gives a client that asks for a fresh copy one, and keeps what it answered", async () => {
+    const { entries } = stubEdgeCache();
+    let body = { chart: { first: true } };
+    const fetchMock = stubYahooSession((url) =>
+      url.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/AAPL")
+        ? jsonResponse(body)
+        : undefined,
+    );
+    const worker = await startWorker(fetchMock);
+
+    await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV, CTX);
+    body = { chart: { first: false } };
+    const forced = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL", {
+        headers: { "cache-control": "no-cache" },
+      }),
+      ENV,
+      CTX,
+    );
+
+    expect(forced.headers.get("x-proxy-cache")).toBe("BYPASS");
+    expect(await forced.json()).toEqual({ chart: { first: false } });
+    // The forced answer replaces what the edge was holding, so the next
+    // reader is not served the copy the user just rejected.
+    const next = await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV, CTX);
+    expect(next.headers.get("x-proxy-cache")).toBe("HIT");
+    expect(await next.json()).toEqual({ chart: { first: false } });
+    expect(entries.size).toBe(1);
+  });
+
+  it("caches the SEC ticker file for a day and company facts for six hours", async () => {
+    const { entries } = stubEdgeCache();
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const worker = await startWorker(fetchMock);
+
+    await worker.fetch(new Request("https://proxy.test/sec/files/company_tickers.json"), ENV, CTX);
+    await worker.fetch(
+      new Request("https://proxy.test/sec/api/xbrl/companyfacts/CIK0000320193.json"),
+      ENV,
+      CTX,
+    );
+    const second = await worker.fetch(
+      new Request("https://proxy.test/sec/files/company_tickers.json"),
+      ENV,
+      CTX,
+    );
+
+    expect(second.headers.get("x-proxy-cache")).toBe("HIT");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const ttls = [...entries.entries()].map(([url, response]) => [
+      new URL(url).pathname,
+      response.headers.get("cache-control"),
+    ]);
+    expect(ttls).toEqual([
+      ["/sec/files/company_tickers.json", "public, max-age=86400"],
+      ["/sec/api/xbrl/companyfacts/CIK0000320193.json", "public, max-age=21600"],
+    ]);
+  });
+
+  it("does not keep a failed upstream answer", async () => {
+    const { cache } = stubEdgeCache();
+    const fetchMock = stubYahooSession((url) =>
+      url.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/AAPL")
+        ? new Response("nope", { status: 404 })
+        : undefined,
+    );
+    const worker = await startWorker(fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://proxy.test/yahoo/chart/AAPL"),
+      ENV,
+      CTX,
+    );
+
+    expect(response.status).toBe(404);
+    expect(cache.put).not.toHaveBeenCalled();
+  });
+
+  it("serves the upstream anyway when the cache itself fails", async () => {
+    vi.stubGlobal("caches", {
+      default: {
+        match: vi.fn(async () => {
+          throw new Error("cache unavailable");
+        }),
+        put: vi.fn(async () => {
+          throw new Error("cache unavailable");
+        }),
+      },
+    });
+    const { fetchMock } = stubChart();
+    const worker = await startWorker(fetchMock);
+
+    const response = await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ chart: {} });
+  });
+
+  it("forwards everything untouched where there is no Cache API at all", async () => {
+    const { fetchMock, calls } = stubChart();
+    const worker = await startWorker(fetchMock);
+
+    const first = await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV);
+    await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV);
+
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-proxy-cache")).toBeNull();
+    expect(calls()).toBe(2);
   });
 });
