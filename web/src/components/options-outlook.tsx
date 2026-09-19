@@ -201,7 +201,7 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
                 {row.kind === "call" ? "Call" : "Put"} · {row.expiration}
                 <div className="footnote">
                   {contractName(row.contract)} · IV {row.impliedSource}
-                  {row.eligible ? "" : " · outside your limits"}
+                  {row.eligible ? "" : " · below minimum delta"}
                 </div>
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
