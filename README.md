@@ -7,7 +7,11 @@ grants CORS to arbitrary origins. Statements and daily prices stay in
 IndexedDB, with sources preserved per metric and date. Charts and tables cover
 3, 5 or 10 fiscal years (3 by default, since Yahoo's free statement data
 reliably covers only about 3 years), cash generation, margins and daily
-prices, with CSV export. The **Balance sheet** tab opens with three donut
+prices, with CSV export. The **Capital & D&A** tab, next to the overview,
+holds the reinvestment picture on its own: the year's capital expenditure,
+D&A, CAPEX / D&A, D&A / revenue and D&A / gross PP&E, then capital investment
+against depreciation, the reinvestment pace and depreciation intensity charted
+across the same window. The **Balance sheet** tab opens with three donut
 charts — assets, liabilities and equity, each split into the lines reported
 inside it for a chosen fiscal year, with whatever those lines leave over drawn
 as one remaining slice.
