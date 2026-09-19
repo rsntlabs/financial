@@ -194,10 +194,18 @@ wasm32 — the Worker discards and overwrites whatever crumb it receives anyway
 — so there is no auth-handshake round trip to reach Yahoo from the browser, and
 no credential ever crosses the browser/Worker boundary; every response keeps a
 plain `Access-Control-Allow-Origin: *` rather than a credentialed, echoed-origin
-response. See [worker/README](../worker/README.md)
-for routes, local development and deployment, including the one-time
-`PROVIDER_PROXY_URL` repository variable CI needs to build the dashboard
-against a real deployment.
+response.
+
+The Worker also holds a shared edge copy (Cloudflare Cache API) of every route
+whose data changes slowly: 15 minutes for daily closes, an hour for quote
+summaries, six hours for annual statements and SEC company facts, a day for
+the SEC ticker file. Option chains are never cached, in the Worker or in the
+browser, since they are intraday quotes. The key is the path and query with
+`crumb` removed, so a session refresh does not fragment it, and the browser is
+still told `no-store` so a Refresh always reaches the Worker. See
+[worker/README](../worker/README.md) for routes, the cache, local development
+and deployment, including the one-time `PROVIDER_PROXY_URL` repository
+variable CI needs to build the dashboard against a real deployment.
 
 ## Verification
 

@@ -310,8 +310,9 @@ export default function App() {
   // is currently typed: choosing a span must not commit a half-typed year.
   const applied = useRef("");
   const inputRef = useRef<string>("");
-  // One window for the whole dashboard: statements, daily closes and the
-  // option chain each take the part of it they can use.
+  // One window for everything that looks backwards: the statements and the
+  // daily closes each take the part of it they can use. The options horizon
+  // looks forward and stays the Options tab's own.
   const span = timeSpan(spanId);
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
@@ -870,10 +871,9 @@ export default function App() {
                     <div className="reading-divider" />
                     <p className="text-sm">
                       One time span at the top of the dashboard sets this
-                      window: the statements charted here, the daily closes
-                      above them and the option expirations analyzed on the
-                      Options tab. Missing values stay missing, and negative
-                      values are preserved.
+                      window, for the statements charted here and the daily
+                      closes above them alike. Missing values stay missing, and
+                      negative values are preserved.
                     </p>
                     <div className="reading-links">
                       <Button
@@ -912,7 +912,6 @@ export default function App() {
                   key={report.ticker}
                   report={report}
                   apiKey={apiKey}
-                  span={span}
                 />
               </TabsContent>
             </Tabs>

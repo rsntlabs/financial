@@ -1353,16 +1353,6 @@
   border-color: var(--border);
   background: var(--muted);
 }
-.option-horizon {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.option-horizon strong {
-  color: var(--foreground);
-  font-weight: 560;
-}
 .option-intro p {
   max-width: none;
 }
