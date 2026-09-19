@@ -681,7 +681,10 @@ fn candidates(
                 implied_volatility: sigma,
                 implied_source: source,
                 premium,
-                eligible: constraints.carries_view(greeks.delta) && constraints.affordable(premium),
+                // Premium is a structure-level constraint: a contract that is
+                // too expensive outright can still be the long leg of an
+                // affordable debit spread after the short premium is applied.
+                eligible: constraints.carries_view(greeks.delta),
                 greeks,
                 working: workings(
                     quote.kind,
@@ -766,6 +769,20 @@ fn pick(candidates: &[Candidate], kind: Kind, delta: f64) -> Option<&Candidate> 
                 .total_cmp(&distance(b))
                 .then(b.liquidity.total_cmp(&a.liquidity))
         })
+}
+
+fn picks(candidates: &[Candidate], kind: Kind, delta: f64) -> Vec<&Candidate> {
+    let mut picked: Vec<_> = candidates
+        .iter()
+        .filter(|c| c.kind == kind && c.mid > 0.0 && c.greeks.delta.abs() > 0.01)
+        .collect();
+    picked.sort_by(|a, b| {
+        let distance = |c: &Candidate| (c.greeks.delta - delta).abs();
+        distance(a)
+            .total_cmp(&distance(b))
+            .then(b.liquidity.total_cmp(&a.liquidity))
+    });
+    picked
 }
 
 fn valid_debit_vertical(bullish: bool, long_strike: f64, short_strike: f64) -> bool {
@@ -1056,8 +1073,9 @@ fn strategies(
         // theta, which is what makes it the better trade when vol is rich. The
         // short leg also pays for part of the long one, so a spread can fit a
         // budget the outright cannot.
-        if let Some(short) = pick(candidates, long_side, if bullish { 0.28 } else { -0.28 }) {
-            for long in carriers.iter().copied().take(CARRIER_ATTEMPTS) {
+        let shorts = picks(candidates, long_side, if bullish { 0.28 } else { -0.28 });
+        'spread: for long in carriers.iter().copied().take(CARRIER_ATTEMPTS) {
+            for short in shorts.iter().copied() {
                 // Delta is normally monotonic by strike, but stale or skewed
                 // IV can violate that assumption. The named payoff requires
                 // this ordering regardless of the selected deltas.
@@ -1087,7 +1105,7 @@ fn strategies(
                 if let Some(strategy) = spread {
                     built.push(strategy);
                     carried = true;
-                    break;
+                    break 'spread;
                 }
             }
         }
@@ -1178,7 +1196,8 @@ fn strategies(
             pick(candidates, Kind::Put, -0.5),
         ) {
             // Cheap volatility with no directional view: own the movement itself.
-            push(&mut built, evaluate(
+            let premium = (call.mid + put.mid) * CONTRACT_MULTIPLIER;
+            let straddle = evaluate(
                 "Long straddle",
                 format!(
                     "Buy the {:.2} call and the {:.2} put, expiring {}",
@@ -1186,14 +1205,22 @@ fn strategies(
                 ),
                 format!(
                     "No directional edge, but movement is cheap: {} of premium buys {:+.2} of gamma per share. {vol_note}",
-                    money((call.mid + put.mid) * CONTRACT_MULTIPLIER),
+                    money(premium),
                     call.greeks.gamma + put.greeks.gamma,
                 ),
                 Direction::Neutral,
                 vec![leg("buy", call, 1), leg("buy", put, 1)],
                 market,
                 constraints,
-            ));
+            );
+            if straddle.is_none() && !constraints.affordable(premium) {
+                notes.push(format!(
+                    "The long straddle costs {}, above the {} premium budget.",
+                    money(premium),
+                    money(constraints.max_premium),
+                ));
+            }
+            push(&mut built, straddle);
         }
     }
     // Rich volatility rewards the structures that are short premium, cheap
@@ -1673,6 +1700,99 @@ mod tests {
         .0
         .iter()
         .any(|strategy| strategy.name == "Long straddle"));
+
+        let tight = Constraints {
+            max_premium: 100.0,
+            ..unlimited
+        };
+        let (strategies, notes) = strategies(
+            &candidates,
+            &signal,
+            &volatility(VolRegime::Cheap),
+            &market,
+            &tight,
+        );
+        assert!(strategies.is_empty());
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("long straddle") && note.contains("premium budget")));
+    }
+
+    #[test]
+    fn debit_spread_searches_past_the_nearest_delta_short_to_fit_the_budget() {
+        let chain = chain(100.0, 0.2, "2026-02-20", 49.0);
+        let market = Assumptions {
+            spot: 100.0,
+            rate: 0.04,
+            dividend_yield: 0.0,
+            years: 49.0 / DAYS_PER_YEAR,
+            sigma: 0.2,
+            drift: 0.05,
+        };
+        let constraints = Constraints {
+            max_premium: 500.0,
+            min_delta: 0.65,
+        };
+        let mut rows = candidates(
+            &chain,
+            "2026-02-20",
+            &market,
+            Direction::Bullish,
+            &constraints,
+        );
+        let carrier_contracts: Vec<_> = carriers(&rows, Kind::Call, 0.6, &constraints)
+            .into_iter()
+            .take(CARRIER_ATTEMPTS)
+            .map(|candidate| candidate.contract.clone())
+            .collect();
+        let short_contracts: Vec<_> = picks(&rows, Kind::Call, 0.28)
+            .into_iter()
+            .filter(|short| {
+                carrier_contracts.iter().any(|contract| {
+                    let long = rows.iter().find(|row| &row.contract == contract).unwrap();
+                    valid_debit_vertical(true, long.strike, short.strike)
+                })
+            })
+            .take(2)
+            .map(|candidate| candidate.contract.clone())
+            .collect();
+        assert_eq!(short_contracts.len(), 2);
+        for row in &mut rows {
+            if carrier_contracts.contains(&row.contract) {
+                row.mid = 10.0;
+                row.premium = 1000.0;
+            }
+            if row.contract == short_contracts[0] {
+                row.mid = 1.0;
+                row.premium = 100.0;
+            } else if row.contract == short_contracts[1] {
+                row.mid = 6.0;
+                row.premium = 600.0;
+            }
+        }
+        let signal = Signal {
+            fundamental: Some(0.5),
+            momentum: Some(0.5),
+            composite: 0.5,
+            direction: Direction::Bullish,
+            conviction: 0.5,
+            drivers: vec![],
+        };
+        let volatility = Volatility {
+            realized30: None,
+            realized90: None,
+            realized252: None,
+            implied_atm: Some(0.2),
+            variance_premium: None,
+            forecast: 0.2,
+            regime: VolRegime::Fair,
+        };
+        let (built, _) = strategies(&rows, &signal, &volatility, &market, &constraints);
+        assert!(built.iter().any(|strategy| {
+            strategy.name == "Bull call spread"
+                && strategy.legs[1].contract == short_contracts[1]
+                && strategy.net_debit <= constraints.max_premium
+        }));
     }
 
     #[test]
@@ -1873,17 +1993,17 @@ mod tests {
                     strategy.net_debit
                 );
             }
-            // The floor travels with the ranking, so the contracts table cannot
-            // lead with a contract no structure is allowed to buy.
+            // The floor travels with the ranking. Premium does not: it applies
+            // to a complete structure, not an individual candidate contract.
             assert!(outlook
                 .candidates
                 .iter()
-                .all(|c| c.eligible == (c.greeks.delta.abs() >= min_delta && c.premium <= budget)));
+                .all(|c| c.eligible == (c.greeks.delta.abs() >= min_delta)));
         }
     }
 
     #[test]
-    fn eligibility_reads_the_size_of_a_delta_and_the_cost_of_the_contract() {
+    fn eligibility_reads_the_size_of_delta_but_not_standalone_contract_cost() {
         let market = Assumptions {
             spot: 100.0,
             rate: 0.04,
@@ -1915,11 +2035,11 @@ mod tests {
         assert!(affordable
             .iter()
             .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65)));
-        // The budget bites on its own: the same contracts, priced the same
-        // way, with only the amount that may be spent changed.
+        // A budget applies to the complete strategy. An expensive long can be
+        // financed by a short leg, so it remains eligible in the table.
         assert!(rows(500.0)
             .iter()
-            .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65 && c.premium <= 500.0)));
+            .all(|c| c.eligible == (c.greeks.delta.abs() >= 0.65)));
     }
 
     #[test]

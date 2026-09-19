@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 /// A component holding less than this share of its total is folded into the
 /// remainder instead of drawn, and a remainder this small is dropped: a few
 /// hundred pixels across, such a slice is thinner than its own border. It is
-/// also the tolerance for components that overrun their total by rounding.
 const MIN_SHARE: f64 = 0.005;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -66,12 +65,19 @@ fn ring(name: &str, total: Option<f64>, parts: &[(&str, Option<f64>)], other: &s
         total: total.and_then(finite),
         ..Ring::default()
     };
-    let Some(total) = ring.total.filter(|t| *t > 0.0) else {
+    let Some(total) = ring.total else {
         ring.note = Some(format!(
             "{name} was not reported for this year, so the lines inside it are not shares of anything."
         ));
         return ring;
     };
+    if total <= 0.0 {
+        ring.note = Some(format!(
+            "{name} was reported as {}, which is not a positive total whose lines can be drawn as shares.",
+            millions(total),
+        ));
+        return ring;
+    }
     let reported: Vec<(&str, f64)> = parts
         .iter()
         .filter_map(|(label, value)| Some((*label, finite((*value)?)?)))
@@ -97,7 +103,7 @@ fn ring(name: &str, total: Option<f64>, parts: &[(&str, Option<f64>)], other: &s
         return ring;
     }
     let reported_total: f64 = reported.iter().map(|(_, value)| value).sum();
-    if reported_total > total * (1.0 + MIN_SHARE) {
+    if reported_total > total {
         ring.note = Some(format!(
             "The reported lines add up to {}, more than the {} of {} they are inside, so they are not shares of it.",
             millions(reported_total),
@@ -302,12 +308,23 @@ mod tests {
             .as_ref()
             .is_some_and(|note| note.contains("more than the 1000.0M")));
 
-        // A total of zero or less is no denominator at all.
+        // A reported non-positive total is no denominator, but it is distinct
+        // from an absent total and the explanation preserves that fact.
         values.insert("annualStockholdersEquity", -50e6);
         assert!(compose(2025, None, &reader(&values))
             .equity
             .note
-            .is_some_and(|note| note.contains("was not reported")));
+            .is_some_and(|note| note.contains("was reported as -50.0M")));
+
+        // Even a small overrun would make displayed shares exceed 100%, so it
+        // is rejected rather than relying on the chart to normalize it.
+        values.insert("annualStockholdersEquity", 1000e6);
+        values.insert("annualRetainedEarnings", 1001e6);
+        let rounding_overrun = compose(2025, None, &reader(&values)).equity;
+        assert!(rounding_overrun.slices.is_empty());
+        assert!(rounding_overrun
+            .note
+            .is_some_and(|note| note.contains("more than the 1000.0M")));
     }
 
     #[test]
