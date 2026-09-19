@@ -11,6 +11,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Building2,
   ChartNoAxesCombined,
   ChevronRight,
   CircleAlert,
@@ -36,28 +37,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  FinancialChart,
-  hasTrend,
-  RevenueStreams,
-  Sparkline,
-} from "@/components/financial-chart";
+import { FinancialChart, RevenueStreams } from "@/components/financial-chart";
 import { StockPriceChart } from "@/components/stock-price-chart";
 import { OptionsOutlookPanel } from "@/components/options-outlook";
 import { BalanceComposition } from "@/components/balance-composition";
+import { CapitalIntensity } from "@/components/capital-intensity";
+import { Metric } from "@/components/metric-card";
 import { analyze } from "@/lib/engine";
 import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
 import { DataSettings } from "@/components/data-settings";
 import { downloadStatements, number, percent } from "@/lib/format";
-import type {
-  Nullable,
-  Point,
-  PointKey,
-  Report,
-  Section,
-  TickerEntry,
-} from "@/lib/types";
+import type { Report, Section, TickerEntry } from "@/lib/types";
 
 const SUGGESTION_LIMIT = 8;
 
@@ -289,45 +280,6 @@ function Statement({ section, report }: { section: Section; report: Report }) {
           .join(" · ")}
       </p>
     </div>
-  );
-}
-function Metric({
-  label,
-  value,
-  unit,
-  detail,
-  points,
-  trendKey,
-  highlight = false,
-}: {
-  label: string;
-  value: Nullable;
-  unit: string;
-  detail: string;
-  points: Point[];
-  trendKey: PointKey;
-  highlight?: boolean;
-}) {
-  return (
-    <Card className={`metric-card ${highlight ? "metric-highlight" : ""}`}>
-      <div className="metric-label">{label}</div>
-      <div
-        className={`metric-value ${value !== null && value < 0 ? "negative" : ""}`}
-      >
-        {unit === "%" ? percent(value) : number(value)}
-        {unit !== "%" && value !== null && <span>{unit}</span>}
-      </div>
-      <div className="metric-detail">{detail}</div>
-      {hasTrend(points, trendKey) && (
-        <div className="metric-trend" aria-hidden="true">
-          <Sparkline
-            points={points}
-            dataKey={trendKey}
-            tone={highlight ? "accent" : "muted"}
-          />
-        </div>
-      )}
-    </Card>
   );
 }
 export default function App() {
@@ -728,10 +680,10 @@ export default function App() {
                 </div>
               </div>
               <div className="metric-group">
-                <div className="metric-group-label">Cash & reinvestment</div>
+                <div className="metric-group-label">Cash generation</div>
                 <div
                   className="metric-grid"
-                  style={{ "--metric-cols": 5 } as React.CSSProperties}
+                  style={{ "--metric-cols": 3 } as React.CSSProperties}
                 >
                   <Metric
                     label="Operating cash flow"
@@ -757,22 +709,6 @@ export default function App() {
                     points={report.points}
                     trendKey="capex"
                   />
-                  <Metric
-                    label="Depreciation & amortization"
-                    value={latest.da}
-                    unit="M"
-                    detail="Annual D&A expense"
-                    points={report.points}
-                    trendKey="da"
-                  />
-                  <Metric
-                    label="D&A / revenue"
-                    value={latest.daRevenue}
-                    unit="%"
-                    detail="Depreciation intensity"
-                    points={report.points}
-                    trendKey="daRevenue"
-                  />
                 </div>
               </div>
             </div>
@@ -785,6 +721,10 @@ export default function App() {
                   <TabsTrigger value="overview">
                     <ChartNoAxesCombined size={15} />
                     Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="capital">
+                    <Building2 size={15} />
+                    Capital & D&A
                   </TabsTrigger>
                   <TabsTrigger value="income">Income statement</TabsTrigger>
                   <TabsTrigger value="balance">Balance sheet</TabsTrigger>
@@ -841,28 +781,6 @@ export default function App() {
                     percent
                   />
                   <FinancialChart
-                    title="Capital investment"
-                    description="Capital expenditure alongside depreciation"
-                    points={report.points}
-                    series={[
-                      { key: "capex", label: "CAPEX" },
-                      { key: "da", label: "D&A" },
-                    ]}
-                    unit={`${currency} M`}
-                  />
-                  <FinancialChart
-                    title="Depreciation intensity"
-                    description="D&A relative to revenue and gross fixed assets"
-                    points={report.points}
-                    series={[
-                      { key: "daRevenue", label: "D&A / revenue" },
-                      { key: "daPpe", label: "D&A / gross PP&E" },
-                    ]}
-                    type="line"
-                    percent
-                    unit="Ratio (%)"
-                  />
-                  <FinancialChart
                     title="Cash generation"
                     description="Cash from operations and after capital investment"
                     points={report.points}
@@ -878,20 +796,6 @@ export default function App() {
                       },
                     ]}
                     unit={`${currency} M`}
-                  />
-                  <FinancialChart
-                    title="Reinvestment pace"
-                    description="Capital expenditure relative to depreciation"
-                    points={report.points}
-                    series={[
-                      {
-                        key: "capexDa",
-                        label: "CAPEX / D&A",
-                        color: "var(--chart-3)",
-                      },
-                    ]}
-                    type="line"
-                    unit="Multiple (×)"
                   />
                   <RevenueStreams
                     points={report.points}
@@ -913,15 +817,27 @@ export default function App() {
                       Statement charts use the same fiscal-year window. Missing
                       values stay missing, and negative values are preserved.
                     </p>
-                    <Button
-                      variant="ghost"
-                      className="self-start px-0"
-                      onClick={() => setTab("cashflow")}
-                    >
-                      Explore the cash flow statement <ArrowRight size={16} />
-                    </Button>
+                    <div className="reading-links">
+                      <Button
+                        variant="ghost"
+                        className="px-0"
+                        onClick={() => setTab("capital")}
+                      >
+                        See capital investment & D&A <ArrowRight size={16} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="px-0"
+                        onClick={() => setTab("cashflow")}
+                      >
+                        Explore the cash flow statement <ArrowRight size={16} />
+                      </Button>
+                    </div>
                   </Card>
                 </div>
+              </TabsContent>
+              <TabsContent value="capital">
+                <CapitalIntensity report={report} />
               </TabsContent>
               <TabsContent value="income">
                 <Statement section={report.statements[0]} report={report} />

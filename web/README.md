@@ -53,6 +53,19 @@ not a service-worker offline application. Browser/profile/origin changes,
 private mode or storage eviction can affect persistence. CSV provides a portable
 export.
 
+## Capital & D&A
+
+Capital expenditure and depreciation have a tab of their own beside the
+overview, since they only mean something read together. The panel heads with
+the latest fiscal year's CAPEX, D&A, CAPEX / D&A, D&A / revenue and D&A /
+gross PP&E, then charts the same three relationships across the window:
+capital investment against depreciation, the reinvestment pace (CAPEX / D&A,
+a multiple), and depreciation intensity against both revenue and gross fixed
+assets. Cash CAPEX is carried as a positive outflow, so the pace is a positive
+multiple: above 1 the asset base is growing, below it the base is being let
+run down. Every figure comes from the same `financial-core` points the
+overview and the statement tables use, so nothing is computed twice.
+
 ## Balance sheet composition
 
 Above the balance-sheet table, three donut charts show assets, liabilities and

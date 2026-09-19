@@ -738,6 +738,27 @@
     width: 100%;
   }
 }
+/* Capital expenditure and depreciation have a tab of their own: the year's
+   figures head it, the charts below carry the whole fiscal-year window. */
+.capital-panel .capital-metrics {
+  margin-bottom: 22px;
+}
+/* Three charts in a two-column grid: the intensity ratios take the row the
+   other two leave, rather than sitting beside an empty half. */
+.capital-panel .chart-grid > :last-child {
+  grid-column: 1 / -1;
+}
+.capital-year {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.reading-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
 .reading-card {
   padding: 31px;
   background: var(--card);

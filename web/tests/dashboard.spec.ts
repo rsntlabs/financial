@@ -617,3 +617,69 @@ test("options outlook downloads the chain only on request and ranks structures f
   }
   expect(errors).toEqual([]);
 });
+
+test("capital expenditure and depreciation read together in their own tab", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await stub(page, []);
+  await page.goto("./");
+  await search(page);
+
+  // The reinvestment charts have left the overview for the tab beside it.
+  await expect(
+    page.getByRole("img", { name: /^Capital investment/ }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("img", { name: /^Revenue,/ })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Capital & D&A", exact: true }).click();
+  const panel = page.getByRole("region", {
+    name: "Capital investment and depreciation",
+  });
+  const metric = (label: string) =>
+    panel.locator(".metric-card", { hasText: label }).locator(".metric-value");
+
+  // FY 2025 spends 100 against 50 of D&A on a 1,000 gross asset base, so the
+  // pace is a multiple above one and the intensities are shares of their own
+  // denominators.
+  await expect(metric("Capital expenditure")).toHaveText("100.0M");
+  await expect(metric("Depreciation & amortization")).toHaveText("50.0M");
+  await expect(metric("CAPEX / D&A")).toHaveText("2.0×");
+  await expect(metric("D&A / revenue")).toHaveText("10.0%");
+  await expect(metric("D&A / gross PP&E")).toHaveText("5.0%");
+  for (const chart of [
+    "Capital investment",
+    "Reinvestment pace",
+    "Depreciation intensity",
+  ])
+    await expect(
+      panel.getByRole("img", {
+        name: `${chart}, fiscal years 2023 to 2025`,
+        exact: true,
+      }),
+    ).toBeVisible();
+  await page.screenshot({ path: "test-results/capital.png", fullPage: true });
+
+  // The overview points at the tab, and the window selector still governs it.
+  await page.getByRole("tab", { name: "Overview", exact: true }).click();
+  await page
+    .getByRole("button", { name: "See capital investment & D&A", exact: true })
+    .click();
+  await page.getByLabel("Number of fiscal years").selectOption("5");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(
+    panel.getByRole("img", {
+      name: "Capital investment, fiscal years 2021 to 2025",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
+  expect(errors).toEqual([]);
+});
