@@ -29,6 +29,7 @@ import {
 } from "@/lib/options";
 import { number, percent } from "@/lib/format";
 import type {
+  Moneyness,
   Nullable,
   OptionCandidate,
   OptionStrategy,
@@ -49,6 +50,18 @@ const HORIZONS = [
   { days: 545, label: "18 months" },
   { days: 730, label: "2 years" },
 ];
+// Which strikes the contract table shows. This is a view filter, not an
+// analysis input: the engine prices and ranks the whole chain either way, so
+// changing it re-filters what is already on screen without a new request.
+const MONEYNESS = [
+  { value: "itm", label: "In the money" },
+  { value: "atm", label: "At the money" },
+  { value: "otm", label: "Out of the money" },
+  { value: "all", label: "All strikes" },
+] as const;
+type MoneynessFilter = Moneyness | "all";
+const DEFAULT_MONEYNESS: MoneynessFilter = "itm";
+
 /** A user-typed limit, or the default when it is empty or out of range. */
 const limit = (value: string, fallback: number, low: number, high: number) => {
   const parsed = Number(value);
@@ -192,6 +205,14 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
+          {rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={14} className="footnote">
+                No contract on this expiration sits there. Choose another
+                moneyness to see the rest of the chain.
+              </TableCell>
+            </TableRow>
+          )}
           {rows.map((row) => (
             <TableRow
               key={row.contract}
@@ -447,6 +468,8 @@ export function OptionsOutlookPanel({
   const [rate, setRate] = useState(String(DEFAULT_RISK_FREE_RATE * 100));
   const [premium, setPremium] = useState(String(DEFAULT_MAX_PREMIUM));
   const [delta, setDelta] = useState(String(DEFAULT_MIN_DELTA));
+  const [moneyness, setMoneyness] =
+    useState<MoneynessFilter>(DEFAULT_MONEYNESS);
 
   async function run() {
     setBusy(true);
@@ -467,8 +490,18 @@ export function OptionsOutlookPanel({
     }
   }
 
+  // The contracts the table shows: the ranking the engine produced, narrowed
+  // to the strikes the moneyness filter asks for.
+  const rows = useMemo(
+    () =>
+      (outlook?.candidates ?? []).filter(
+        (row) => moneyness === "all" || row.moneyness === moneyness,
+      ),
+    [outlook, moneyness],
+  );
+
   // Every contract whose derivation can be shown: the recommended legs first,
-  // then the ranked candidates, without repeating a contract that is both.
+  // then the shown candidates, without repeating a contract that is both.
   const derivations = useMemo(() => {
     const entries = new Map<string, { label: string; working: Working }>();
     const add = (
@@ -492,10 +525,10 @@ export function OptionsOutlookPanel({
         leg.working,
         `${leg.action === "buy" ? "Long" : "Short"} `,
       );
-    for (const row of outlook?.candidates ?? [])
+    for (const row of rows)
       add(row.contract, row.kind, row.strike, row.working, "");
     return entries;
-  }, [outlook]);
+  }, [outlook, rows]);
   const selected = derivations.get(shown) ?? derivations.values().next().value;
   const currency = outlook?.currency || report.currency || "Quote currency";
   return (
@@ -694,13 +727,29 @@ export function OptionsOutlookPanel({
           )}
           <div className="section-caption">
             <span>CONTRACTS</span>
-            <span>
-              <Activity size={13} aria-hidden="true" /> Ranked by edge,
-              alignment and liquidity · at most {cash(outlook.maxPremium)}{" "}
-              premium, at least {number(outlook.minDelta, 2)} delta
-            </span>
+            <div className="option-controls">
+              <label htmlFor="option-moneyness">Moneyness</label>
+              <select
+                id="option-moneyness"
+                value={moneyness}
+                onChange={(e) =>
+                  setMoneyness(e.target.value as MoneynessFilter)
+                }
+              >
+                {MONEYNESS.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+              <span>
+                <Activity size={13} aria-hidden="true" /> Ranked by edge,
+                alignment and liquidity · at most {cash(outlook.maxPremium)}{" "}
+                premium, at least {number(outlook.minDelta, 2)} delta
+              </span>
+            </div>
           </div>
-          <Candidates rows={outlook.candidates} />
+          <Candidates rows={rows} />
           {selected && (
             <Calculation
               working={selected.working}
