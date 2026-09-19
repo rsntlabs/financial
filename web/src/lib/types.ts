@@ -44,6 +44,26 @@ export interface Section {
   name: string;
   rows: StatementRow[];
 }
+export interface CompositionSlice {
+  label: string;
+  value: number;
+  /** Share of the ring's total, between 0 and 1. */
+  share: number;
+}
+export interface CompositionRing {
+  name: string;
+  total: Nullable;
+  slices: CompositionSlice[];
+  /** Why this section has no slices, when it has none. */
+  note: string | null;
+}
+export interface BalanceComposition {
+  year: number;
+  end: string | null;
+  assets: CompositionRing;
+  liabilities: CompositionRing;
+  equity: CompositionRing;
+}
 export interface Report {
   ticker: string;
   name: string;
@@ -51,6 +71,7 @@ export interface Report {
   years: number[];
   points: Point[];
   statements: Section[];
+  composition: BalanceComposition[];
   warnings: string[];
   fetchedAt: string;
   streamNames: string[];

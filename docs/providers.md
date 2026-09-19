@@ -126,6 +126,23 @@ the panel. The output is a model
 result for a single expiration at expiry, before commissions, assignment and
 early exercise — not investment advice.
 
+## Balance sheet composition
+
+`financial-core`'s `composition` module turns each balance-sheet section into
+shares of its own total, one entry per fiscal year, read through the same
+metric keys the statement rows use. Assets split into cash, receivables,
+inventory and net PP&E; liabilities into payables, current debt and long-term
+debt (never total debt, which would count the same borrowing twice); equity
+into retained earnings. Whatever the reported lines leave over becomes one
+remaining slice, and components under half a percent of the total join it
+rather than being drawn as a sliver.
+
+A total may come from the reported line or, for assets and liabilities, from
+their two subtotals. A ring is produced only when the lines really are parts of
+that total: a missing or non-positive total, a negative line, or lines adding
+up to more than the total each yield a note in place of the slices, and the
+note travels to the panel, which shows it instead of a circle.
+
 ## Financial normalization
 
 SEC mappings use consolidated US GAAP concepts and ordered aliases. Duration

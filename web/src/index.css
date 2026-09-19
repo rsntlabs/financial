@@ -647,6 +647,97 @@
   line-height: 1.7;
   color: var(--muted-foreground);
 }
+/* The three balance-sheet rings sit above the statement table: one card per
+   section, each a donut with its own legend of amounts and shares. */
+.composition-panel {
+  margin-bottom: 28px;
+}
+.composition-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.composition-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.composition-controls select {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 32px;
+  min-width: 0;
+  padding: 0 26px 0 11px;
+  color: var(--foreground);
+}
+.composition-card .chart-empty {
+  height: 215px;
+  padding: 18px;
+}
+.composition-card .chart-empty p {
+  max-width: none;
+  font-size: 11px;
+}
+.composition-total {
+  fill: var(--foreground);
+  font-size: 21px;
+  font-weight: 560;
+}
+.composition-total-caption {
+  fill: var(--muted-foreground);
+  font-size: 10px;
+}
+.composition-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 11px;
+}
+.composition-legend > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.composition-legend dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+.composition-legend dt i {
+  height: 7px;
+  width: 7px;
+  border-radius: 2px;
+  flex: none;
+}
+.composition-legend dd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+}
+.composition-legend dd span {
+  color: var(--muted-foreground);
+  width: 46px;
+  text-align: right;
+}
+@media (max-width: 1000px) {
+  .composition-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .statement-heading .composition-controls {
+    width: 100%;
+  }
+}
 .reading-card {
   padding: 31px;
   background: var(--card);
