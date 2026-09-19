@@ -57,8 +57,16 @@ export.
 
 The Options tab downloads a chain only when asked: chains are intraday quotes,
 so nothing about them is cached, and opening the tab costs no request. The
-horizon selector picks the expiration to analyze and the risk-free rate is an
-input, since neither is provider data. Everything else — the Greeks, the
+horizon selector picks the expiration to analyze, from 14 days to two years, so
+LEAPS are analyzed at the time value they actually carry rather than being cut
+off at a year. The risk-free rate, the maximum premium (3,000 by default) and
+the minimum delta (0.65 by default) are inputs too, since none of them is
+provider data. The premium limit is the most a recommended structure may cost
+to open, so a structure that collects premium is never limited by it; the delta
+floor applies to the contract bought to carry the directional view, while legs
+sold and the wings bought to define their risk are chosen by the shape of the
+structure. Contracts outside either limit stay in the table, dimmed, since they
+are still the market the recommendation was chosen from. Everything else — the Greeks, the
 directional signal, the volatility regime and the ranked structures — is
 computed by `financial-core` in WASM from the report, the saved daily closes and
 the chain (see [provider architecture](../docs/providers.md)). Contracts whose

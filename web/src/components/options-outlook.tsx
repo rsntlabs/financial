@@ -22,6 +22,8 @@ import {
 } from "./ui/table";
 import {
   DEFAULT_HORIZON_DAYS,
+  DEFAULT_MAX_PREMIUM,
+  DEFAULT_MIN_DELTA,
   DEFAULT_RISK_FREE_RATE,
   loadOutlook,
 } from "@/lib/options";
@@ -35,7 +37,28 @@ import type {
   Working,
 } from "@/lib/types";
 
-const HORIZONS = [14, 30, 45, 90, 180];
+// Anything from the next few weeks to the LEAPS a couple of years out; the
+// engine measures whichever expiration the chain actually lists nearest it.
+const HORIZONS = [
+  { days: 14, label: "14 days" },
+  { days: 30, label: "30 days" },
+  { days: 45, label: "45 days" },
+  { days: 90, label: "90 days" },
+  { days: 180, label: "180 days" },
+  { days: 365, label: "1 year" },
+  { days: 545, label: "18 months" },
+  { days: 730, label: "2 years" },
+];
+/** A user-typed limit, or the default when it is empty or out of range. */
+const limit = (value: string, fallback: number, low: number, high: number) => {
+  const parsed = Number(value);
+  return value.trim() !== "" &&
+    Number.isFinite(parsed) &&
+    parsed >= low &&
+    parsed <= high
+    ? parsed
+    : fallback;
+};
 const money = (value: Nullable, digits = 2) => number(value, digits);
 const signed = (value: number, digits = 2) =>
   `${value > 0 ? "+" : ""}${number(value, digits)}`;
@@ -155,6 +178,7 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
             <TableHead>Contract</TableHead>
             <TableHead className="text-right">Strike</TableHead>
             <TableHead className="text-right">Mid</TableHead>
+            <TableHead className="text-right">Premium</TableHead>
             <TableHead className="text-right">Model</TableHead>
             <TableHead className="text-right">Edge</TableHead>
             <TableHead className="text-right">IV</TableHead>
@@ -169,11 +193,15 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={row.contract}>
+            <TableRow
+              key={row.contract}
+              className={row.eligible ? undefined : "candidate-excluded"}
+            >
               <TableCell>
                 {row.kind === "call" ? "Call" : "Put"} · {row.expiration}
                 <div className="footnote">
                   {contractName(row.contract)} · IV {row.impliedSource}
+                  {row.eligible ? "" : " · outside your limits"}
                 </div>
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
@@ -181,6 +209,9 @@ function Candidates({ rows }: { rows: OptionCandidate[] }) {
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
                 {money(row.mid)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {cash(row.premium)}
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
                 {money(row.modelValue)}
@@ -408,6 +439,8 @@ export function OptionsOutlookPanel({
   const [horizon, setHorizon] = useState(DEFAULT_HORIZON_DAYS);
   const [shown, setShown] = useState("");
   const [rate, setRate] = useState(String(DEFAULT_RISK_FREE_RATE * 100));
+  const [premium, setPremium] = useState(String(DEFAULT_MAX_PREMIUM));
+  const [delta, setDelta] = useState(String(DEFAULT_MIN_DELTA));
 
   async function run() {
     setBusy(true);
@@ -417,6 +450,8 @@ export function OptionsOutlookPanel({
         await loadOutlook(report, apiKey, {
           horizonDays: horizon,
           riskFreeRate: Number(rate) / 100,
+          maxPremium: limit(premium, DEFAULT_MAX_PREMIUM, 1, 10_000_000),
+          minDelta: limit(delta, DEFAULT_MIN_DELTA, 0, 0.95),
         }),
       );
     } catch (e) {
@@ -477,9 +512,9 @@ export function OptionsOutlookPanel({
             value={horizon}
             onChange={(e) => setHorizon(Number(e.target.value))}
           >
-            {HORIZONS.map((days) => (
-              <option key={days} value={days}>
-                {days} days
+            {HORIZONS.map((horizon) => (
+              <option key={horizon.days} value={horizon.days}>
+                {horizon.label}
               </option>
             ))}
           </select>
@@ -492,6 +527,26 @@ export function OptionsOutlookPanel({
             step={0.25}
             value={rate}
             onChange={(e) => setRate(e.target.value)}
+          />
+          <label htmlFor="option-premium">Max premium</label>
+          <Input
+            id="option-premium"
+            type="number"
+            min={1}
+            max={10000000}
+            step={100}
+            value={premium}
+            onChange={(e) => setPremium(e.target.value)}
+          />
+          <label htmlFor="option-delta">Min delta</label>
+          <Input
+            id="option-delta"
+            type="number"
+            min={0}
+            max={0.95}
+            step={0.05}
+            value={delta}
+            onChange={(e) => setDelta(e.target.value)}
           />
           <Button size="sm" disabled={busy} onClick={() => void run()}>
             {busy
@@ -524,7 +579,10 @@ export function OptionsOutlookPanel({
             is downloaded only when you ask for it. The analysis re-solves every
             implied volatility it cannot trust, prices delta, gamma, theta, vega
             and rho for each contract, and ranks structures by expected profit,
-            probability of profit and how tradeable the quotes are.
+            probability of profit and how tradeable the quotes are. Choose a
+            horizon from two weeks to two years, cap what a structure may cost
+            to open, and set how much delta the contract carrying the view has
+            to have.
           </p>
         </Card>
       ) : null}
@@ -632,7 +690,8 @@ export function OptionsOutlookPanel({
             <span>CONTRACTS</span>
             <span>
               <Activity size={13} aria-hidden="true" /> Ranked by edge,
-              alignment and liquidity
+              alignment and liquidity · at most {cash(outlook.maxPremium)}{" "}
+              premium, at least {number(outlook.minDelta, 2)} delta
             </span>
           </div>
           <Candidates rows={outlook.candidates} />

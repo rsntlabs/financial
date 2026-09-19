@@ -10,11 +10,14 @@ reliably covers only about 3 years), cash generation, margins and daily
 prices, with CSV export.
 
 The **Options** tab adds a Greeks-driven outlook: on request it downloads the
-live Yahoo option chain nearest a chosen horizon, prices every contract with
-Black-Scholes-Merton (re-solving implied volatility when the quoted one is not
-usable), and ranks structures — long calls or puts, debit and credit verticals,
-iron condors, straddles — by expected profit, probability of profit and how
-tradeable the quotes are. The direction comes from the company's own
+live Yahoo option chain nearest a chosen horizon — two weeks out to the LEAPS
+two years away — prices every contract with Black-Scholes-Merton (re-solving
+implied volatility when the quoted one is not usable), and ranks structures —
+long calls or puts, debit and credit verticals, iron condors, straddles — by
+expected profit, probability of profit and how tradeable the quotes are. Two
+limits are yours to set: the most premium a structure may cost to open (3,000
+by default) and the least delta the contract carrying the view may have (0.65
+by default). The direction comes from the company's own
 fundamentals and its price history; the volatility view from implied against
 realized. Every contract shows its working: the inputs, d₁ and d₂, and each
 Greek's formula with this contract's numbers substituted into it beside the

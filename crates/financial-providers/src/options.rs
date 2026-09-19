@@ -186,6 +186,22 @@ mod tests {
         assert!(normalize(&empty, "TEST").is_err());
     }
     #[test]
+    fn horizons_beyond_a_year_select_the_leaps_expiration() {
+        // 2027-01-15 and 2028-01-21: the January LEAPS either side of a
+        // two-year horizon.
+        const LEAPS_2027: i64 = 1_799_971_200;
+        const LEAPS_2028: i64 = 1_832_025_600;
+        let today = NaiveDate::from_ymd_opt(2026, 1, 2).unwrap();
+        let dates = [JANUARY, FEBRUARY, LEAPS_2027, LEAPS_2028];
+        assert_eq!(pick_expiration(&dates, today, 45), Some(FEBRUARY));
+        assert_eq!(pick_expiration(&dates, today, 365), Some(LEAPS_2027));
+        assert_eq!(pick_expiration(&dates, today, 730), Some(LEAPS_2028));
+        // Further out than anything listed still picks the longest contract
+        // rather than giving up on the request.
+        assert_eq!(pick_expiration(&dates, today, 1825), Some(LEAPS_2028));
+    }
+
+    #[test]
     fn expiration_choice_is_the_closest_future_date_to_the_horizon() {
         let today = NaiveDate::from_ymd_opt(2026, 1, 2).unwrap();
         let dates = expiration_epochs(&body());

@@ -138,6 +138,10 @@ export interface OptionCandidate {
   openInterest: Nullable;
   impliedVolatility: number;
   impliedSource: string;
+  /** What one contract costs at the mid, in quote currency. */
+  premium: number;
+  /** Clears the minimum delta and fits inside the maximum premium. */
+  eligible: boolean;
   greeks: Greeks;
   working: Working | null;
   modelValue: number;
@@ -191,6 +195,8 @@ export interface OptionsOutlook {
   riskFreeRate: number;
   dividendYield: number;
   horizonDays: number;
+  maxPremium: number;
+  minDelta: number;
   signal: OptionsSignal;
   volatility: OptionsVolatility;
   forecast: OptionsForecast;

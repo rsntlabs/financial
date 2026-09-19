@@ -517,7 +517,35 @@ test("options outlook downloads the chain only on request and ranks structures f
   // The substituted line carries this contract's own numbers, not symbols.
   await expect(delta).toContainText(/\d+\.\d{4} · \d+\.\d{4}/);
   await expect(page.getByText(/Model assumptions & limits/)).toBeVisible();
+
+  // The limits the search ran under are stated with the result, and every
+  // contract carries the premium one of it costs.
+  await expect(
+    page.getByRole("columnheader", { name: "Premium" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/at most 3,000 premium, at least 0.65 delta/),
+  ).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
+
+  // A horizon beyond a year, a premium budget and a delta floor are all the
+  // user's to set: the chain is fetched again and the result says what it was
+  // measured against.
+  await page.getByLabel("Horizon in days").selectOption("730");
+  await page.getByLabel("Max premium").fill("5000");
+  await page.getByLabel("Min delta").fill("0.5");
+  await page
+    .getByRole("button", { name: "Re-run analysis", exact: true })
+    .click();
+  await expect(
+    page.getByText(/at most 5,000 premium, at least 0.50 delta/),
+  ).toBeVisible({ timeout: 20000 });
+  expect(calls.filter((c) => c === "options")).toHaveLength(2);
+  await page.getByText(/Model assumptions & limits/).click();
+  await expect(page.getByText(/against a 730-day horizon/)).toBeVisible();
+  await expect(
+    page.getByText(/a structure may cost at most 5000 to open/),
+  ).toBeVisible();
 
   // The panel takes the width it is given: the full dashboard column on a
   // desktop, and no horizontal page scroll on a phone.
