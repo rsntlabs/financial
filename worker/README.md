@@ -9,7 +9,9 @@ instead of calling Yahoo or SEC directly. See
 The Worker owns the Yahoo session (cookie and crumb) and the real SEC
 `User-Agent`; the browser never handles either, and every response keeps a
 plain `Access-Control-Allow-Origin: *` since no credentials cross the
-browser/proxy boundary.
+browser/proxy boundary. It also keeps a shared edge copy of the answers that
+change slowly, so many readers of the same company cost the upstreams one
+request rather than one each.
 
 ## Routes
 
@@ -22,6 +24,46 @@ browser/proxy boundary.
 - `GET /sec/files/company_tickers.json` — proxies to `www.sec.gov`.
 - `GET /sec/api/xbrl/...` — proxies to `data.sec.gov`.
 - `GET /health` — `{"status":"ok"}`.
+
+## Cache
+
+Every route above except `/yahoo/options/` and `/health` is answered from the
+Cloudflare Cache API when a copy is there, and the upstream answer is put back
+for the next reader. Each route's TTL comes from how fast the data behind it
+actually moves:
+
+| Route | TTL | Why |
+| --- | --- | --- |
+| `/yahoo/chart/` | 15 minutes | Daily closes; only the latest session moves, and the dashboard already calls these "not real-time". |
+| `/yahoo/quoteSummary/` | 1 hour | Company profile and summary detail. |
+| `/yahoo/timeseries/` | 6 hours | Annual statements, which change quarterly at most. |
+| `/sec/api/` | 6 hours | Company facts, filed in batches. |
+| `/sec/files/` | 24 hours | The ticker file changes rarely. |
+| `/yahoo/options/` | never | Intraday quotes. |
+
+Option chains are excluded on purpose rather than given a short TTL. They are
+priced from the current bid and ask, so a minute-old copy of one is a wrong
+answer rather than a slightly stale one — the same reason the dashboard never
+saves a chain to IndexedDB either.
+
+The cache key is the request path and its query, with `crumb` dropped and the
+remaining parameters sorted. The crumb a client sends is a placeholder the
+Worker replaces upstream and the real one changes on every session refresh, so
+keying on it would split the cache by session rather than by what was asked.
+Only `200` responses are kept, and a cache that errors or is missing entirely
+(as under `vitest`, which has no Cache API) never fails a request the upstream
+could still answer.
+
+Nothing user-specific is cached: these routes carry public market data, the
+upstream `Set-Cookie` is stripped before the copy is stored, and an Alpha
+Vantage key never reaches this Worker at all (the browser calls Alpha
+directly). Responses to the browser stay `Cache-Control: no-store`, so Refresh
+data and Refresh price always reach the Worker rather than a browser-held
+copy; what they get back may still be an edge copy up to its TTL old. A client
+that needs to go past that can send `Cache-Control: no-cache` (or
+`Pragma: no-cache`), which bypasses the lookup and replaces the stored copy
+with what the upstream answers. Every response on a cached route says which
+happened in `X-Proxy-Cache: HIT | MISS | BYPASS`.
 
 ## Run locally
 
