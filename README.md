@@ -3,31 +3,32 @@
 A static React dashboard with Rust/WASM provider clients and analysis. The
 browser calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directly;
 a small Cloudflare Worker proxies the Yahoo and SEC requests, since neither
-grants CORS to arbitrary origins. Statements and daily prices stay in
-IndexedDB, with sources preserved per metric and date. One **time span** at
+grants CORS to arbitrary origins, and keeps a shared edge copy of the answers
+that change slowly (never of an option chain). Statements and daily prices stay
+in IndexedDB, with sources preserved per metric and date. One **time span** at
 the top of the dashboard — a month out to every year on record, three years by
-default — sets the window for everything below it: the fiscal years the
-statements and their charts cover (3, 5 or 10 of them, since Yahoo's free
-statement data reliably covers only about 3 years), the stretch of daily
-closes the price chart draws, and how far forward the Options tab reads the
-option chain. Charts and tables cover cash generation, margins and daily
-prices, with CSV export. The **Capital & D&A** tab, next to the overview,
-holds the reinvestment picture on its own: the year's capital expenditure,
-D&A, CAPEX / D&A, D&A / revenue and D&A / gross PP&E, then capital investment
-against depreciation, the reinvestment pace and depreciation intensity charted
-across the same window. The **Balance sheet** tab opens with three donut
-charts — assets, liabilities and equity, each split into the lines reported
-inside it for a chosen fiscal year, with whatever those lines leave over drawn
-as one remaining slice.
+default — sets the window for everything that looks backwards: the fiscal years
+the statements and their charts cover (3, 5 or 10 of them, since Yahoo's free
+statement data reliably covers only about 3 years) and the stretch of daily
+closes the price chart draws. Charts and tables cover cash generation, margins
+and daily prices, with CSV export. The **Capital & D&A** tab, next to the
+overview, holds the reinvestment picture on its own: the year's capital
+expenditure, D&A, CAPEX / D&A, D&A / revenue and D&A / gross PP&E, then capital
+investment against depreciation, the reinvestment pace and depreciation
+intensity charted across the same window. The **Balance sheet** tab opens with
+three donut charts — assets, liabilities and equity, each split into the lines
+reported inside it for a chosen fiscal year, with whatever those lines leave
+over drawn as one remaining slice.
 
 The **Options** tab adds a Greeks-driven outlook: on request it downloads the
-live Yahoo option chain nearest the horizon that time span implies — a month
-out to the LEAPS two years away — prices every contract with
-Black-Scholes-Merton (re-solving implied volatility when the quoted one is not
-usable), and ranks structures — long calls or puts, debit and credit verticals,
-iron condors, straddles — by expected profit, probability of profit and how
-tradeable the quotes are. Two limits are yours to set on the tab itself, since
-neither is a period: the most premium a structure may cost to open (3,000 by
+live Yahoo option chain nearest a chosen horizon — two weeks out to the LEAPS
+two years away — prices every contract with Black-Scholes-Merton (re-solving
+implied volatility when the quoted one is not usable), and ranks structures —
+long calls or puts, debit and credit verticals, iron condors, straddles — by
+expected profit, probability of profit and how tradeable the quotes are. That
+horizon looks forward, at an expiration the chain has to list, so it stays the
+tab's own control rather than following the dashboard's span. Two limits are
+yours to set beside it: the most premium a structure may cost to open (3,000 by
 default) and the least delta the contract carrying the view may have (0.65 by
 default). The direction comes from the company's own fundamentals and its price
 history; the volatility view from implied against realized. Every contract

@@ -595,24 +595,10 @@ test("options outlook downloads the chain only on request and ranks structures f
   ).toBeVisible();
   await page.screenshot({ path: "test-results/options.png", fullPage: true });
 
-  // The horizon is the dashboard's time span, read forward: three years back
-  // asks the chain for the two-year LEAPS, and the panel has no period control
-  // of its own to disagree with it.
-  await expect(page.getByLabel("Horizon in days")).toHaveCount(0);
-  await expect(page.locator(".option-horizon")).toContainText(
-    "Horizon 2 years",
-  );
-  await page.getByText(/Model assumptions & limits/).click();
-  await expect(page.getByText(/against a 730-day horizon/)).toBeVisible();
-  await page.getByText(/Model assumptions & limits/).click();
-
-  // A shorter span, a premium budget and a delta floor all change what is
-  // searched. The chain is intraday, so a span change asks for a re-run rather
-  // than restating a result measured against the old window.
-  await chooseSpan(page, "3 months");
-  await expect(
-    page.getByText(/re-run to use the current time span/),
-  ).toBeVisible();
+  // A horizon beyond a year, a premium budget and a delta floor are all the
+  // user's to set here: the horizon looks forward, at an expiration the chain
+  // has to list, so it is the panel's own rather than the dashboard's span.
+  await page.getByLabel("Horizon in days").selectOption("730");
   await page.getByLabel("Max premium").fill("5000");
   await page.getByLabel("Min delta").fill("0.5");
   await page
@@ -623,7 +609,7 @@ test("options outlook downloads the chain only on request and ranks structures f
   ).toBeVisible({ timeout: 20000 });
   expect(calls.filter((c) => c === "options")).toHaveLength(2);
   await page.getByText(/Model assumptions & limits/).click();
-  await expect(page.getByText(/against a 90-day horizon/)).toBeVisible();
+  await expect(page.getByText(/against a 730-day horizon/)).toBeVisible();
   await expect(
     page.getByText(/a structure may cost at most 5000 to open/),
   ).toBeVisible();
@@ -712,7 +698,7 @@ test("capital expenditure and depreciation read together in their own tab", asyn
   expect(errors).toEqual([]);
 });
 
-test("one time span sets the statements, the price window and the options horizon", async ({
+test("one time span sets the statements and the price window, and leaves the options horizon alone", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -730,23 +716,25 @@ test("one time span sets the statements, the price window and the options horizo
   ).toHaveCount(0);
   await expect(page.getByLabel("Number of fiscal years")).toHaveCount(0);
   await expect(page.locator(".span-summary")).toHaveText(
-    "3 fiscal years of statements · 3 years of daily closes · option expirations nearest 2 years out",
+    "3 fiscal years of statements · 3 years of daily closes",
   );
 
-  // One click moves the price window and the option horizon together, and
-  // says so.
+  // One click moves the price window, and says so.
   const chart = page
     .getByRole("region", { name: "TEST stock price" })
     .getByRole("img");
   await chooseSpan(page, "1 month");
   await expect(page.locator(".span-summary")).toHaveText(
-    "3 fiscal years of statements · 1 month of daily closes · option expirations nearest 1 month out",
+    "3 fiscal years of statements · 1 month of daily closes",
   );
   await expect(chart).toHaveAttribute("aria-label", /3 trading sessions/);
+
+  // The Options tab looks forward instead, so its horizon is its own and the
+  // span leaves it alone.
   await page.getByRole("tab", { name: "Options", exact: true }).click();
-  await expect(page.locator(".option-horizon")).toContainText(
-    "Horizon 1 month",
-  );
+  await expect(page.getByLabel("Horizon in days")).toHaveValue("45");
+  await chooseSpan(page, "1 year");
+  await expect(page.getByLabel("Horizon in days")).toHaveValue("45");
   await page.getByRole("tab", { name: "Overview", exact: true }).click();
 
   // A span long enough to move the fiscal window moves the statements too,

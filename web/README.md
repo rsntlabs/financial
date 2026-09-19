@@ -57,16 +57,18 @@ export.
 ## Time span
 
 `src/lib/timespan.ts` holds the dashboard's one window. The user picks a span
-once, in the toolbar above the price chart, and every panel reads the part of
-it that its data supports: `years` for the statements the WASM engine
-analyzes, `months` for the daily closes the price chart draws (0 being every
-saved session), and `horizonDays` for how far forward the option chain is
-read. The parts differ because the data does — statements arrive as whole
-fiscal years and only 3, 5 or 10 of them are reliably sourced, so every span
-shorter than five years settles on the shortest statement window, and the
-option horizon stops at the two-year LEAPS that Yahoo lists as its longest
-expiration. The line under the toolbar states all three for the chosen span,
-so the mapping is on screen rather than in this file only.
+once, in the toolbar above the price chart, and every backward-looking panel
+reads the part of it that its data supports: `years` for the statements the
+WASM engine analyzes, and `months` for the daily closes the price chart draws
+(0 being every saved session). The parts differ because the data does —
+statements arrive as whole fiscal years and only 3, 5 or 10 of them are
+reliably sourced, so every span shorter than five years settles on the
+shortest statement window. The line under the toolbar states both for the
+chosen span, so the mapping is on screen rather than in this file only.
+
+The Options tab is deliberately outside the span. Its horizon looks forward,
+at an expiration the chain has to actually list, and is chosen per analysis
+rather than per view, so it stays that panel's own control.
 
 Choosing a span costs no request: prices and statements are already in hand,
 and the statements are only re-analyzed when the fiscal window itself moves.
@@ -109,25 +111,24 @@ rows below carry the figures.
 
 The Options tab downloads a chain only when asked: chains are intraday quotes,
 so nothing about them is cached, and opening the tab costs no request. The
-expiration to analyze comes from the dashboard's time span, read forward
-(`src/lib/timespan.ts`): a month for the shortest span, up to the two-year
-LEAPS for any span of three years or more, so LEAPS are analyzed at the time
-value they actually carry rather than being cut off at a year. Because a chain
-is never cached, changing the span does not re-download one; the panel says so
-and the analysis is re-run on request. The risk-free rate, the maximum premium
-(3,000 by default) and the minimum delta (0.65 by default) stay the panel's
-own, since none of them is a period or provider data. The premium limit is the
-most a recommended structure may cost to open, so a structure that collects
-premium is never limited by it; the delta floor applies to the contract bought
-to carry the directional view, while legs sold and the wings bought to define
-their risk are chosen by the shape of the structure. Contracts outside either
-limit stay in the table, dimmed, since they are still the market the
-recommendation was chosen from. Everything else — the Greeks, the directional
-signal, the volatility regime and the ranked structures — is computed by
-`financial-core` in WASM from the report, the saved daily closes and the chain
-(see [provider architecture](../docs/providers.md)). Contracts whose implied
-volatility the provider does not supply, or quotes outside a plausible range,
-are re-solved from the mid price and labeled as such in the table.
+horizon selector picks the expiration to analyze, from 14 days to two years, so
+LEAPS are analyzed at the time value they actually carry rather than being cut
+off at a year. It is the panel's own rather than the dashboard's time span:
+that span says how far back the view reaches, while this says how far forward,
+to an expiration the chain has to list. The risk-free rate, the maximum premium
+(3,000 by default) and the minimum delta (0.65 by default) are inputs too,
+since none of them is provider data. The premium limit is the most a
+recommended structure may cost to open, so a structure that collects premium is
+never limited by it; the delta floor applies to the contract bought to carry
+the directional view, while legs sold and the wings bought to define their risk
+are chosen by the shape of the structure. Contracts outside either limit stay
+in the table, dimmed, since they are still the market the recommendation was
+chosen from. Everything else — the Greeks, the directional signal, the
+volatility regime and the ranked structures — is computed by `financial-core`
+in WASM from the report, the saved daily closes and the chain (see [provider
+architecture](../docs/providers.md)). Contracts whose implied volatility the
+provider does not supply, or quotes outside a plausible range, are re-solved
+from the mid price and labeled as such in the table.
 
 The calculation card shows the derivation for any recommended leg or ranked
 contract: the six inputs, the intermediate terms (d₁, d₂, N(d₁), N(d₂), φ(d₁),
