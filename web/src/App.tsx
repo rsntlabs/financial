@@ -44,6 +44,7 @@ import { OptionsOutlookPanel } from "@/components/options-outlook";
 import { BalanceComposition } from "@/components/balance-composition";
 import { CapitalIntensity } from "@/components/capital-intensity";
 import { Metric } from "@/components/metric-card";
+import { CompanyLogo } from "@/components/company-logo";
 import { analyze } from "@/lib/engine";
 import { loadStock, loadTickers } from "@/lib/provider";
 import { loadKey } from "@/lib/storage";
@@ -571,15 +572,18 @@ export default function App() {
               <span>{report.ticker}</span>
             </div>
             <div className="dashboard-heading">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h1>{report.name}</h1>
-                  <Badge variant="outline">{report.ticker}</Badge>
+              <div className="heading-identity">
+                <CompanyLogo ticker={report.ticker} name={report.name} />
+                <div>
+                  <div className="heading-title">
+                    <h1>{report.name}</h1>
+                    <Badge variant="outline">{report.ticker}</Badge>
+                  </div>
+                  <p>
+                    Company financials <span>·</span> {yearsLabel}{" "}
+                    <span>·</span> {currency}
+                  </p>
                 </div>
-                <p>
-                  Company financials <span>·</span> {yearsLabel} <span>·</span>{" "}
-                  {currency}
-                </p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button

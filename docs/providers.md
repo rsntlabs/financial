@@ -170,6 +170,14 @@ from the browser to `alphavantage.co`, never to the Worker. Providers have a
 75-second budget each, including price fallback (`ProviderChain`, unchanged
 by the transport).
 
+The company logo at the top of the dashboard is not provider data and is not
+part of this chain: no provider returns artwork, so `web/src/lib/logo.ts`
+requests it as a plain image from a logo host keyed by the ticker symbol.
+An `<img>` needs no CORS grant, so that request is neither proxied nor
+retried nor cached by the browser layer, and a company the host does not
+have simply falls back to the ticker's monogram (see
+[web notes](../web/README.md)).
+
 CORS is a response policy controlled by the server receiving the cross-origin
 request. An `AllowAnyOrigin` policy on the dashboard or Vite changes only
 responses from that server; it cannot change Yahoo's or SEC's response

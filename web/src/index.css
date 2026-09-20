@@ -399,6 +399,52 @@
   align-items: center;
   gap: 20px;
 }
+.heading-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.heading-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* The company's mark, sized to the two lines of heading beside it. A logo
+   arrives at whatever aspect its host drew it in, so it is contained rather
+   than cropped, and the monogram stands in when no image does. */
+.company-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.company-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+.company-monogram {
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.4px;
+  color: oklch(0.52 0.12 var(--monogram-hue));
+  background: oklch(0.52 0.12 var(--monogram-hue) / 0.12);
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+.dark .company-monogram {
+  color: oklch(0.82 0.11 var(--monogram-hue));
+  background: oklch(0.82 0.11 var(--monogram-hue) / 0.16);
+}
 .dashboard-heading h1 {
   font-size: 31px;
   font-weight: 570;
@@ -1127,7 +1173,21 @@
   .dashboard-heading h1 {
     font-size: 23px;
   }
-  .dashboard-heading > div > div {
+  .heading-identity {
+    /* Beside the first line of a name that now wraps, not centred against
+       the whole stack. */
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .company-logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+  .company-monogram {
+    font-size: 14px;
+  }
+  .heading-title {
     gap: 8px;
     flex-wrap: wrap;
   }

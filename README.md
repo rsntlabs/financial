@@ -5,14 +5,16 @@ browser calls **Yahoo Finance → SEC EDGAR → optional Alpha Vantage** directl
 a small Cloudflare Worker proxies the Yahoo and SEC requests, since neither
 grants CORS to arbitrary origins, and keeps a shared edge copy of the answers
 that change slowly (never of an option chain). Statements and daily prices stay
-in IndexedDB, with sources preserved per metric and date. One **time span** at
-the top of the dashboard — a month out to every year on record, three years by
-default — sets the window for everything that looks backwards: the fiscal years
-the statements and their charts cover (3, 5 or 10 of them, since Yahoo's free
-statement data reliably covers only about 3 years) and the stretch of daily
-closes the price chart draws. Charts and tables cover cash generation, margins
-and daily prices, with CSV export. The **Capital & D&A** tab, next to the
-overview, holds the reinvestment picture on its own: the year's capital
+in IndexedDB, with sources preserved per metric and date. The dashboard heads
+with the company's own logo beside its name, fetched as a plain image keyed by
+ticker and falling back to the ticker's monogram when no logo loads. One **time
+span** at the top of the dashboard — a month out to every year on record, three
+years by default — sets the window for everything that looks backwards: the
+fiscal years the statements and their charts cover (3, 5 or 10 of them, since
+Yahoo's free statement data reliably covers only about 3 years) and the stretch
+of daily closes the price chart draws. Charts and tables cover cash generation,
+margins and daily prices, with CSV export. The **Capital & D&A** tab, next to
+the overview, holds the reinvestment picture on its own: the year's capital
 expenditure, D&A, CAPEX / D&A, D&A / revenue and D&A / gross PP&E, then capital
 investment against depreciation, the reinvestment pace and depreciation
 intensity charted across the same window. The **Balance sheet** tab opens with

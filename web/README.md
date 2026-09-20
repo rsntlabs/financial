@@ -22,6 +22,23 @@ the UI; `npm run build` also regenerates WASM for production. Set
 `npm run dev` — `cd ../worker && npm run dev` starts one on
 `http://127.0.0.1:8787`.
 
+## Company logo
+
+The dashboard heads with the company's own mark beside its name. No provider
+returns artwork — Yahoo, SEC EDGAR and Alpha Vantage answer with numbers,
+names and dates — so `src/lib/logo.ts` requests it as a plain image from a
+logo host keyed by the ticker symbol. An `<img>` needs no CORS grant, so this
+one request stays outside both the provider chain and the Worker proxy, and it
+carries no API key, no referrer and nothing about the report; the image is not
+saved to IndexedDB either.
+
+`VITE_TICKER_LOGO_URL` (see `.env.example`) points at another host, with
+`{ticker}` or `{ticker_lower}` standing in for the symbol, and an empty value
+asks for no logos at all. A host that has never heard of the company, a
+blocked request and an empty setting all land in the same place: the ticker's
+own two-letter monogram, coloured from the symbol so a company keeps one
+colour, drawn with no network at all.
+
 ## Cache
 
 The existing IndexedDB `financials-alphavantage-v1` name is retained for migration.

@@ -8,6 +8,10 @@ export const UPSTREAM =
 export const STATEMENTS = "**/yahoo/timeseries/**";
 export const CHART = "**/yahoo/chart/**";
 export const OPTIONS = "**/yahoo/options/**";
+// The company mark is a plain image from a logo host, outside the provider
+// chain and outside the proxy (see web/src/lib/logo.ts); this is the default
+// host that VITE_TICKER_LOGO_URL would override.
+export const LOGO = "https://assets.parqet.com/logos/**";
 export const KEY = "TESTKEY123";
 export const HTTP = {
   NOT_FOUND: 404,
@@ -196,12 +200,23 @@ function companyFacts(entityName = "Test Industries", cik = 1234) {
   return { cik, entityName, facts: {} };
 }
 
+// One opaque pixel: enough for the dashboard to draw a logo rather than fall
+// back to the monogram, without any test depending on the real logo host.
+const LOGO_PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPw7z3yHwAFbwKgeDx8QwAAAABJRU5ErkJggg==",
+  "base64",
+);
+export function fulfillLogo(route: Route) {
+  return route.fulfill({ contentType: "image/png", body: LOGO_PIXEL });
+}
+
 // Yahoo profile/typed-statement lookups and SEC lookups are proxy plumbing,
 // not test data: every test needs them stubbed, few tests care about their
 // shape. The Yahoo session handshake needs no stub at all: the wasm32 client
 // never fetches real credentials (see vendor/yfinance-rs's auth.rs patch).
 export async function plumbing(page: Page) {
   await Promise.all([
+    page.route(LOGO, fulfillLogo),
     // yfinance-rs's typed statement and profile calls are not exercised here;
     // the timeseries route below supplies every dashboard metric instead.
     page.route("**/yahoo/quoteSummary/**", (route) =>

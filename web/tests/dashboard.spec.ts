@@ -1,9 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import {
   HTTP,
   STATEMENTS,
   CHART,
   KEY,
+  LOGO,
   OPTIONS,
   optionChain,
   fixture,
@@ -84,6 +85,34 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   await page.getByRole("button", { name: "Export CSV" }).click();
   expect((await download).suggestedFilename()).toBe("TEST_financials.csv");
   expect(errors).toEqual([]);
+});
+test("the company mark heads the dashboard, and falls back to the ticker monogram when no logo loads", async ({
+  page,
+}) => {
+  await stub(page);
+  const requested: string[] = [];
+  const missing = (route: Route) => {
+    requested.push(route.request().url());
+    return route.fulfill({ status: HTTP.NOT_FOUND, body: "" });
+  };
+  await page.route(LOGO, missing);
+  await page.goto("./");
+  await search(page);
+  // The logo host is asked for this company by symbol, and the mark stands in
+  // for the missing image rather than leaving a gap beside the name.
+  expect(requested).toHaveLength(1);
+  expect(requested[0]).toContain("TEST");
+  await expect(page.locator(".company-monogram")).toHaveText("TE");
+  await expect(page.locator(".company-logo img")).toHaveCount(0);
+  // A logo the host does have is drawn instead of the monogram. Only this
+  // test's 404 is withdrawn; stub()'s own logo route stays.
+  await page.unroute(LOGO, missing);
+  await page.reload();
+  await search(page);
+  const logo = page.locator(".company-logo img");
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveJSProperty("naturalWidth", 1);
+  await expect(page.locator(".company-monogram")).toHaveCount(0);
 });
 test("price chart shows the latest close and daily change, filters locally, and supports keyboard tooltips", async ({
   page,
