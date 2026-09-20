@@ -1352,6 +1352,19 @@
   padding: 0 26px 0 11px;
   color: var(--foreground);
 }
+/* The note sits next to the filter on wide screens and drops to its own full
+   width line when the caption wraps. Laying it out as a flex row keeps the icon
+   on the first line of text instead of on the last line's baseline. */
+.option-ranking-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.5;
+}
+.option-ranking-note svg {
+  flex: none;
+  margin-top: 2px;
+}
 .option-controls input {
   height: 32px;
   width: 80px;
@@ -1499,6 +1512,17 @@
   .option-controls,
   .option-calculation .option-controls select {
     width: 100%;
+  }
+  /* The filter block takes the full width here, so let the caption stack and
+     keep every line flush with the section label rather than centring the
+     label against a two line block. */
+  .section-caption {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .option-ranking-note {
+    flex: 1 0 100%;
   }
   .options-panel table {
     font-size: 10px;

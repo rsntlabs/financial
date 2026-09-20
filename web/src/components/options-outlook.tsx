@@ -742,10 +742,13 @@ export function OptionsOutlookPanel({
                   </option>
                 ))}
               </select>
-              <span>
-                <Activity size={13} aria-hidden="true" /> Ranked by edge,
-                alignment and liquidity · at most {cash(outlook.maxPremium)}{" "}
-                premium, at least {number(outlook.minDelta, 2)} delta
+              <span className="option-ranking-note">
+                <Activity size={13} aria-hidden="true" />
+                <span>
+                  Ranked by edge, alignment and liquidity · at most{" "}
+                  {cash(outlook.maxPremium)} premium, at least{" "}
+                  {number(outlook.minDelta, 2)} delta
+                </span>
               </span>
             </div>
           </div>
