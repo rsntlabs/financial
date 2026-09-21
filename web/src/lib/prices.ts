@@ -47,13 +47,16 @@ const warmed = new Map<string, Promise<LoadedPrices>>();
  * storage warning included — as if it had asked for it itself.
  */
 export function warmPrices(ticker: string, apiKey: string): void {
+  // A previous company load can fail before its panel mounts, leaving this
+  // ticker's warm result unclaimed. Do not let a retry consume that stale
+  // promise (especially a rejection from a transient outage).
+  warmed.clear();
   const promise = loadPrices(ticker, apiKey);
   // Nothing is waiting on it yet, and a failure must not surface as an
   // unhandled rejection before the panel is there to show it.
   void promise.catch(() => {});
   // One company is on screen at a time, so an unclaimed older download is only
   // holding a price history in memory.
-  warmed.clear();
   warmed.set(ticker, promise);
 }
 

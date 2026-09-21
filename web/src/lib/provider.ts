@@ -67,10 +67,10 @@ export function loadTickers(): Promise<TickerEntry[]> {
       // download the SEC file again inside the first statement request. Seed
       // it here instead, while the user is still choosing a company, and load
       // the engine itself the same way ahead of the first search.
-      void primeTickers(saved).catch(() => {
+      void primeTickers(saved.list, Date.now() - saved.fetchedAt).catch(() => {
         // Only a head start: the engine downloads the file itself if it needs it.
       });
-      return saved;
+      return saved.list;
     }
     // A downloaded list leaves the engine's own map filled already.
     const list = await fetchTickers();

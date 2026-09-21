@@ -1,6 +1,8 @@
 use crate::{Needs, PricePoint, Provider, Request};
 use async_trait::async_trait;
 use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use yfinance_core::{
     alpha::{normalize, MAPPINGS},
     dataset::Dataset,
@@ -9,13 +11,20 @@ use yfinance_core::{
 
 pub struct Alpha {
     key: String,
+    gate: Arc<Mutex<()>>,
 }
 impl Alpha {
     pub fn new(key: &str) -> Result<Self, String> {
+        Self::with_gate(key, Arc::new(Mutex::new(())))
+    }
+    pub(crate) fn with_gate(key: &str, gate: Arc<Mutex<()>>) -> Result<Self, String> {
         if key.is_empty() || key.len() > 128 || !key.bytes().all(|b| b.is_ascii_alphanumeric()) {
             return Err("Invalid Alpha Vantage API key.".into());
         }
-        Ok(Self { key: key.into() })
+        Ok(Self {
+            key: key.into(),
+            gate,
+        })
     }
 }
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
@@ -25,12 +34,14 @@ impl Provider for Alpha {
         "Alpha Vantage"
     }
     async fn financials(&self, request: &Request, needs: &Needs) -> Result<Dataset, String> {
+        let _permit = self.gate.lock().await;
         fetch_financials(request, needs, |function| {
             fetch_statement(&self.key, &request.ticker, function)
         })
         .await
     }
     async fn prices(&self, ticker: &str) -> Result<Option<Vec<PricePoint>>, String> {
+        let _permit = self.gate.lock().await;
         let body = fetch_statement(&self.key, ticker, "TIME_SERIES_DAILY").await?;
         if body["Meta Data"]["2. Symbol"].as_str() != Some(ticker)
             || body["Meta Data"]["4. Output Size"].as_str() != Some("Full size")

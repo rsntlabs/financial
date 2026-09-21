@@ -342,7 +342,7 @@ impl Edgar {
     /// waiting on the SEC ticker file first. A map already downloaded in this
     /// process is left alone: it is at least as fresh as anything handed back
     /// here, and may be mid-request behind the same lock.
-    pub async fn prime_tickers(&self, entries: Vec<TickerEntry>) {
+    pub async fn prime_tickers(&self, entries: Vec<TickerEntry>, age: Duration) {
         if entries.is_empty() {
             return;
         }
@@ -354,7 +354,7 @@ impl Edgar {
             .into_iter()
             .map(|entry| (entry.ticker.replace('.', "-"), (entry.cik, entry.name)))
             .collect();
-        cache.tickers_at = Instant::now();
+        cache.tickers_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
     }
 }
 
