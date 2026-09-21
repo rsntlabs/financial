@@ -108,6 +108,12 @@ export async function savedTickers(): Promise<TickerEntry[] | undefined> {
   if (!cache || Date.now() - cache.fetchedAt > TICKERS_TTL_MS) {
     return undefined;
   }
+  // A list saved before CIKs were kept alongside the names still answers the
+  // dropdown, but it cannot seed the provider engine's own lookup map, which
+  // is the point of saving it; treat it as expired so this page replaces it.
+  if (!cache.list.every((entry) => Number.isInteger(entry?.cik))) {
+    return undefined;
+  }
   return cache.list;
 }
 export const saveTickers = (list: TickerEntry[]) =>

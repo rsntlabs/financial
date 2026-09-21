@@ -9,9 +9,12 @@ instead of calling Yahoo or SEC directly. See
 The Worker owns the Yahoo session (cookie and crumb) and the real SEC
 `User-Agent`; the browser never handles either, and every response keeps a
 plain `Access-Control-Allow-Origin: *` since no credentials cross the
-browser/proxy boundary. It also keeps a shared edge copy of the answers that
-change slowly, so many readers of the same company cost the upstreams one
-request rather than one each.
+browser/proxy boundary. The dashboard asks for its statements, profile and
+prices together, so that session is established once for a whole fan of
+requests arriving at the same time, and a stale one costs a single handshake
+however many of them it rejects. It also keeps a shared edge copy of the
+answers that change slowly, so many readers of the same company cost the
+upstreams one request rather than one each.
 
 ## Routes
 

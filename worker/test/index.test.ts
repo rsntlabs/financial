@@ -214,6 +214,47 @@ describe("Yahoo routes", () => {
     expect(cookieCalls).toBe(1);
     expect(crumbCalls).toBe(1);
   });
+
+  it("establishes one session for a stale one, however many requests it fails", async () => {
+    let crumbCalls = 0;
+    let arrive!: () => void;
+    const straggler = new Promise<void>((resolve) => (arrive = resolve));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      if (url === "https://fc.yahoo.com") {
+        return new Response(null, { headers: { "set-cookie": "A=1; Path=/" } });
+      }
+      if (url.startsWith("https://query1.finance.yahoo.com/v1/test/getcrumb")) {
+        crumbCalls += 1;
+        return new Response(`crumb-${crumbCalls}`);
+      }
+      if (url.includes("crumb=crumb-1")) {
+        // MSFT is told its session is stale only after AAPL has already
+        // replaced it: the straggler of a fan of parallel requests that were
+        // all rejected for the same expired session.
+        if (url.includes("/MSFT")) {
+          await straggler;
+        }
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (url.includes("crumb=crumb-2")) {
+        return jsonResponse({ chart: {} });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const worker = await startWorker(fetchMock);
+
+    // Both start on the same first session; only the second is held back.
+    const straggling = worker.fetch(new Request("https://proxy.test/yahoo/chart/MSFT"), ENV);
+    const first = await worker.fetch(new Request("https://proxy.test/yahoo/chart/AAPL"), ENV);
+    arrive();
+    const second = await straggling;
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ chart: {} });
+    expect(crumbCalls).toBe(2);
+  });
 });
 
 describe("SEC routes", () => {

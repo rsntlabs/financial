@@ -1,4 +1,9 @@
-use crate::{alpha::Alpha, edgar::Edgar, yahoo::Yahoo, Provider, ProviderChain, Request};
+use crate::{
+    alpha::Alpha,
+    edgar::{Edgar, TickerEntry},
+    yahoo::Yahoo,
+    Provider, ProviderChain, Request,
+};
 use wasm_bindgen::prelude::*;
 
 // Reuse authentication and SEC caches within the tab; keys live only for each call.
@@ -54,6 +59,18 @@ impl BrowserProviders {
     pub async fn tickers(&self) -> Result<String, String> {
         let tickers = self.edgar.tickers().await?;
         serde_json::to_string(&tickers).map_err(|_| "Invalid ticker data.".into())
+    }
+
+    /// Hands back a ticker list this page saved earlier, filling the SEC
+    /// ticker -> CIK map (see `Edgar::prime_tickers`) without a request. A page
+    /// that has one no longer waits for that file to download before the
+    /// company facts behind the first search can be asked for.
+    #[wasm_bindgen(js_name = primeTickers)]
+    pub async fn prime_tickers(&self, tickers: String) -> Result<(), String> {
+        let entries: Vec<TickerEntry> =
+            serde_json::from_str(&tickers).map_err(|_| "Invalid ticker data.".to_string())?;
+        self.edgar.prime_tickers(entries).await;
+        Ok(())
     }
 }
 

@@ -1,6 +1,6 @@
 import { analyze } from "./engine";
 import { savedStock, saveStock, savedTickers, saveTickers } from "./storage";
-import { fetchTickers, providerRequest } from "./service";
+import { fetchTickers, primeTickers, providerRequest } from "./service";
 import type { TickerEntry } from "./types";
 // Legacy cached Alpha payloads remain readable by the analysis engine.
 export interface FinancialPayload {
@@ -62,8 +62,17 @@ export function loadTickers(): Promise<TickerEntry[]> {
   tickersRequest ??= (async () => {
     const saved = await savedTickers();
     if (saved) {
+      // Downloading this list is what fills the engine's ticker -> CIK map, so
+      // a page answering the dropdown from storage has an empty one and would
+      // download the SEC file again inside the first statement request. Seed
+      // it here instead, while the user is still choosing a company, and load
+      // the engine itself the same way ahead of the first search.
+      void primeTickers(saved).catch(() => {
+        // Only a head start: the engine downloads the file itself if it needs it.
+      });
       return saved;
     }
+    // A downloaded list leaves the engine's own map filled already.
     const list = await fetchTickers();
     try {
       await saveTickers(list);

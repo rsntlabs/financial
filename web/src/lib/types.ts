@@ -2,6 +2,12 @@ export type Nullable = number | null;
 export interface TickerEntry {
   ticker: string;
   name: string;
+  /**
+   * The issuer's SEC CIK. Saved with the list so the provider engine can be
+   * handed the lookup map back (see `primeTickers`) rather than downloading
+   * the SEC ticker file again before the first company can be opened.
+   */
+  cik: number;
 }
 export interface PricePoint {
   date: string;

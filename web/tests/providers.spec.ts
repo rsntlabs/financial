@@ -35,10 +35,15 @@ test("static page routes financial and price requests through the Cloudflare Wor
     page.getByRole("heading", { name: "Test Industries", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".price-value")).toHaveText("126.00");
-  expect(requests).toEqual([
-    expect.stringContaining("/yahoo/timeseries/TEST"),
-    expect.stringContaining("/yahoo/chart/TEST"),
-  ]);
+  // Both are asked for at once, so which one is recorded first is not this
+  // test's business; that each went to the proxy exactly once is.
+  expect(requests).toHaveLength(2);
+  expect(requests).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("/yahoo/timeseries/TEST"),
+      expect.stringContaining("/yahoo/chart/TEST"),
+    ]),
+  );
 });
 
 test("API keys are sent only to Alpha Vantage, never to the Yahoo or SEC proxy", async ({

@@ -68,6 +68,16 @@ export async function fetchOptionChain(
   }
 }
 
+/**
+ * Fills the provider engine's SEC ticker -> CIK map from a list this page
+ * already has, so opening a company does not spend a round trip downloading
+ * the SEC ticker file before its company facts can be requested.
+ */
+export async function primeTickers(list: TickerEntry[]): Promise<void> {
+  const providers = await loadProviders();
+  await providers.primeTickers(JSON.stringify(list));
+}
+
 export async function fetchTickers(): Promise<TickerEntry[]> {
   const providers = await loadProviders();
   try {

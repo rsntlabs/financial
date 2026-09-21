@@ -46,6 +46,7 @@ import { CapitalIntensity } from "@/components/capital-intensity";
 import { Metric } from "@/components/metric-card";
 import { analyze } from "@/lib/engine";
 import { loadStock, loadTickers } from "@/lib/provider";
+import { warmPrices } from "@/lib/prices";
 import { loadKey } from "@/lib/storage";
 import { DataSettings } from "@/components/data-settings";
 import { downloadStatements, number, percent } from "@/lib/format";
@@ -339,6 +340,12 @@ export default function App() {
     setError("");
     inputRef.current = symbol;
     try {
+      // The statements and the daily closes are separate Yahoo answers and
+      // neither needs the other, so the price download starts here instead of
+      // waiting for the chart below to mount once the statements have arrived.
+      // A refresh leaves prices where they are: Refresh price is their own
+      // control, and the chart on screen is not re-reading them.
+      if (!refresh) warmPrices(symbol, apiKey);
       const loaded = await loadStock(
         symbol,
         apiKey,
