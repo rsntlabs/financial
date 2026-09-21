@@ -99,7 +99,7 @@ interface TickerCache {
   list: TickerEntry[];
   fetchedAt: number;
 }
-export async function savedTickers(): Promise<TickerEntry[] | undefined> {
+export async function savedTickers(): Promise<TickerCache | undefined> {
   const cache = await operation<TickerCache | undefined>(
     "metadata",
     "readonly",
@@ -114,7 +114,7 @@ export async function savedTickers(): Promise<TickerEntry[] | undefined> {
   if (!cache.list.every((entry) => Number.isInteger(entry?.cik))) {
     return undefined;
   }
-  return cache.list;
+  return cache;
 }
 export const saveTickers = (list: TickerEntry[]) =>
   operation("metadata", "readwrite", (s) =>

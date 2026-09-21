@@ -73,9 +73,15 @@ export async function fetchOptionChain(
  * already has, so opening a company does not spend a round trip downloading
  * the SEC ticker file before its company facts can be requested.
  */
-export async function primeTickers(list: TickerEntry[]): Promise<void> {
+export async function primeTickers(
+  list: TickerEntry[],
+  ageMilliseconds: number,
+): Promise<void> {
   const providers = await loadProviders();
-  await providers.primeTickers(JSON.stringify(list));
+  await providers.primeTickers(
+    JSON.stringify(list),
+    Math.max(0, Math.round(ageMilliseconds)),
+  );
 }
 
 export async function fetchTickers(): Promise<TickerEntry[]> {
