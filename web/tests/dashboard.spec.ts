@@ -7,6 +7,7 @@ import {
   OPTIONS,
   optionChain,
   fixture,
+  plumbing,
   priceFixture,
   fulfillChart,
   timeseries,
@@ -37,8 +38,16 @@ async function chooseSpan(page: Page, label: string) {
 async function search(page: Page, symbol = "TEST") {
   await page.getByLabel("Ticker symbol", { exact: true }).fill(symbol);
   await page.getByLabel("Ticker symbol", { exact: true }).press("Enter");
+  // Only the SEC fixture's own ticker has a company name behind it; any other
+  // symbol resolves to no issuer and is headed by the symbol itself. Naming
+  // the company here for every symbol passed only while the company being
+  // replaced was still on screen, which a load this quick no longer leaves
+  // time for.
   await expect(
-    page.getByRole("heading", { name: "Test Industries", exact: true }),
+    page.getByRole("heading", {
+      name: symbol === "TEST" ? "Test Industries" : symbol,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: 20000 });
   await expect(
     page.getByRole("button", { name: "Refresh price", exact: true }),
@@ -54,7 +63,9 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   await page.goto("./");
   await page.screenshot({ path: "test-results/setup.png", fullPage: true });
   await search(page);
-  expect(calls).toEqual(["financials", "prices"]);
+  // One of each, sorted: the statements and the prices are downloaded together,
+  // so neither is reliably recorded first.
+  expect([...calls].sort()).toEqual(["financials", "prices"]);
   await expect(page.locator(".metric-highlight .metric-value")).toHaveText(
     "500.0M",
   );
@@ -157,7 +168,7 @@ test("cache survives reload and another tab, and period changes make no requests
   await search(page);
   await expect(page.getByText(/No API requests used/)).toBeVisible();
   await chooseSpan(page, "10 years");
-  expect(calls).toEqual(["financials", "prices"]);
+  expect([...calls].sort()).toEqual(["financials", "prices"]);
   const tab = await context.newPage();
   const more: string[] = [];
   await stub(tab, more);
@@ -344,6 +355,55 @@ test("prices load separately and stale ticker responses cannot replace the curre
   await expect(
     page.getByRole("region", { name: "TEST stock price" }),
   ).toHaveCount(0);
+});
+
+test("the price download does not wait for the statements to finish", async ({
+  page,
+}) => {
+  let priceRequested!: () => void;
+  const priceStarted = new Promise<void>((r) => (priceRequested = r));
+  await plumbing(page);
+  await routeStatements(page, async (route) => {
+    // Held until Yahoo has been asked for the daily closes. A dashboard that
+    // starts the price download only once the statements have arrived and been
+    // analyzed never gets here, and the search below times out instead.
+    await priceStarted;
+    await route.fulfill({ json: timeseries() });
+  });
+  await page.route(CHART, async (route) => {
+    priceRequested();
+    await fulfillChart(route);
+  });
+  await page.goto("./");
+  await search(page);
+  await expect(page.locator(".price-value")).toHaveText("126.00");
+});
+
+test("Yahoo's statement requests go out together, not one answer at a time", async ({
+  page,
+}) => {
+  let fullHistoryRequested!: () => void;
+  const fullHistory = new Promise<void>((r) => (fullHistoryRequested = r));
+  await plumbing(page);
+  await page.route(STATEMENTS, async (route) => {
+    if (new URL(route.request().url()).searchParams.get("period1") === "0") {
+      // The dashboard's own full-history request, which used to be sent last,
+      // after every typed statement had come back.
+      fullHistoryRequested();
+      return route.fulfill({ json: timeseries() });
+    }
+    // yfinance-rs's typed statements, each over a bounded window. Holding them
+    // until the full-history request has been sent resolves only if all of
+    // them are in flight at the same time.
+    await fullHistory;
+    return route.fulfill({ json: timeseries({ metrics: {} }) });
+  });
+  await page.route(CHART, (route) => fulfillChart(route));
+  await page.goto("./");
+  await search(page);
+  await expect(page.locator(".metric-highlight .metric-value")).toHaveText(
+    "500.0M",
+  );
 });
 
 test("all available price history is preserved and calendar controls stay local", async ({
@@ -545,13 +605,14 @@ test("options outlook downloads the chain only on request and ranks structures f
     page.getByRole("heading", { name: "Bring the Greeks into the picture." }),
   ).toBeVisible();
   // A live chain is never fetched until it is asked for.
-  expect(calls).toEqual(["financials", "prices"]);
+  expect([...calls].sort()).toEqual(["financials", "prices"]);
 
   await page
     .getByRole("button", { name: "Analyze options", exact: true })
     .click();
   await expect(page.getByText("TEST view")).toBeVisible({ timeout: 20000 });
-  expect(calls).toEqual(["financials", "prices", "options"]);
+  expect(calls).toHaveLength(3);
+  expect(calls.at(-1)).toBe("options");
 
   // The recommendation names a structure, prices it, and shows its net Greeks.
   const recommendation = page.locator(".option-strategy.primary");
@@ -771,7 +832,7 @@ test("one time span sets the statements and the price window, and leaves the opt
   await expect(page.locator(".span-summary")).toContainText(
     "5 fiscal years of statements",
   );
-  expect(calls).toEqual(["financials", "prices"]);
+  expect([...calls].sort()).toEqual(["financials", "prices"]);
 
   // The chosen span is the dashboard's, so it survives a move to another
   // company.

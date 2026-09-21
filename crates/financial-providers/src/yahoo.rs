@@ -155,8 +155,30 @@ impl Provider for Yahoo {
     async fn financials(&self, request: &Request, needs: &Needs) -> Result<Dataset, String> {
         let mut data = Dataset::new();
         let f = FundamentalsBuilder::new(&self.client, &request.ticker);
+        // Nothing Yahoo answers here is needed to ask for the rest of it, so
+        // the three typed statements, the profile and the supplemental
+        // timeseries rows are all in flight at once and cost one round trip
+        // between them rather than five. What wins where two of them report the
+        // same metric is still decided by the order they are read in below,
+        // never by the order they happen to arrive in.
+        let name = async {
+            if !needs.name {
+                return None;
+            }
+            yfinance_rs::profile::load_profile(&self.client, &request.ticker)
+                .await
+                .ok()
+        };
+        let (income, balance, cashflow, profile, extended) = futures::join!(
+            f.income_statement(false, None),
+            f.balance_sheet(false, None),
+            f.cashflow(false, None),
+            name,
+            self.extended_statement(&request.ticker),
+        );
+
         let income = or_warn(
-            f.income_statement(false, None).await,
+            income,
             &mut data.warnings,
             "Yahoo income statement unavailable.",
         );
@@ -173,7 +195,7 @@ impl Provider for Yahoo {
         }
 
         let balance = or_warn(
-            f.balance_sheet(false, None).await,
+            balance,
             &mut data.warnings,
             "Yahoo balance sheet unavailable.",
         );
@@ -200,7 +222,7 @@ impl Provider for Yahoo {
         }
 
         let cashflow = or_warn(
-            f.cashflow(false, None).await,
+            cashflow,
             &mut data.warnings,
             "Yahoo cash flow statement unavailable.",
         );
@@ -220,19 +242,15 @@ impl Provider for Yahoo {
             }
         }
 
-        if needs.name {
-            if let Ok(profile) =
-                yfinance_rs::profile::load_profile(&self.client, &request.ticker).await
-            {
-                use yfinance_rs::profile::Profile;
-                data.name = match profile {
-                    Profile::Company(c) => Some(c.name),
-                    Profile::Fund(f) => Some(f.name),
-                    _ => None,
-                };
-            }
+        if let Some(profile) = profile {
+            use yfinance_rs::profile::Profile;
+            data.name = match profile {
+                Profile::Company(c) => Some(c.name),
+                Profile::Fund(f) => Some(f.name),
+                _ => None,
+            };
         }
-        match self.extended_statement(&request.ticker).await {
+        match extended {
             Ok(extra) => data.merge(extra),
             Err(_) => data
                 .warnings

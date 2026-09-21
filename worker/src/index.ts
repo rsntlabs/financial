@@ -159,8 +159,19 @@ async function establishYahooSession(): Promise<YahooSession> {
   return cachedSession;
 }
 
-async function getYahooSession(refresh: SessionRefresh): Promise<YahooSession> {
-  const cached = refresh === SessionRefresh.UseCached ? cachedSession : null;
+// `stale` is the session an upstream request was just rejected for. The
+// dashboard asks for its statements, profile and prices all at once, so a
+// whole fan of requests can be rejected for the same expired session; each one
+// that arrives after another has already replaced it takes the new session
+// instead of establishing one more. Overlapping refreshes still share the one
+// in-flight handshake below.
+async function getYahooSession(
+  refresh: SessionRefresh,
+  stale?: YahooSession,
+): Promise<YahooSession> {
+  const replaced = stale !== undefined && cachedSession?.crumb !== stale.crumb;
+  const cached =
+    refresh === SessionRefresh.UseCached || replaced ? cachedSession : null;
   if (cached && cached.expiresAt > Date.now()) {
     return cached;
   }
@@ -196,7 +207,7 @@ async function fetchYahoo(upstream: string, search: string): Promise<Response> {
     return first;
   }
 
-  const refreshed = await getYahooSession(SessionRefresh.Force);
+  const refreshed = await getYahooSession(SessionRefresh.Force, session);
   return requestYahoo(upstream, search, refreshed);
 }
 

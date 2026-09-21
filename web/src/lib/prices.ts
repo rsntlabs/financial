@@ -35,11 +35,40 @@ interface LoadedPrices {
   warning: string;
 }
 const active = new Map<string, Promise<LoadedPrices>>();
+// A download started before the panel that will show it exists. Statements and
+// daily closes are separate Yahoo answers and neither needs the other, so the
+// price request begins when a company is opened rather than when the chart
+// mounts, which is only after the statements have arrived and been analyzed.
+const warmed = new Map<string, Promise<LoadedPrices>>();
+
+/**
+ * Starts the daily closes for `ticker` alongside whatever else is loading. The
+ * panel takes this exact result when it mounts — its cached flag and any
+ * storage warning included — as if it had asked for it itself.
+ */
+export function warmPrices(ticker: string, apiKey: string): void {
+  const promise = loadPrices(ticker, apiKey);
+  // Nothing is waiting on it yet, and a failure must not surface as an
+  // unhandled rejection before the panel is there to show it.
+  void promise.catch(() => {});
+  // One company is on screen at a time, so an unclaimed older download is only
+  // holding a price history in memory.
+  warmed.clear();
+  warmed.set(ticker, promise);
+}
+
 export function loadPrices(
   ticker: string,
   apiKey: string,
   refresh = false,
 ): Promise<LoadedPrices> {
+  // Refresh price asks for a new download by definition, so it never takes a
+  // result that was already in hand.
+  const warm = refresh ? undefined : warmed.get(ticker);
+  if (warm) {
+    warmed.delete(ticker);
+    return warm;
+  }
   const existing = active.get(ticker);
   if (existing) return existing;
   const load = async (generation: number): Promise<LoadedPrices> => {

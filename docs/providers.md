@@ -27,6 +27,8 @@ fixes the requested priority order.
    typed statements and full daily history. Its typed statement model exposes
    fewer rows than the dashboard, so a supplemental request to Yahoo's
    fundamentals-timeseries endpoint tries every dashboard metric before fallback.
+   None of those answers is needed to ask for the others, so they are all in
+   flight at once; see [request concurrency](#request-concurrency).
 2. Remaining coverage is computed by metric and fiscal year. SEC company facts
    fill gaps, including older annual periods. An unavailable source does not
    prevent trying the next one; usable partial data is retained.
@@ -78,7 +80,9 @@ classes. The adapter therefore loads the SEC ticker file into a ticker-keyed
 map using the same configured HTTP client, and uses edgar-rs for company facts.
 Ticker mappings are cached for one day, and the most recent company facts for
 one hour. Within each tab (or native process), the shared SEC client limits facts requests
-to five per second; its mutex serializes SEC cache misses. The ticker download is an additional request.
+to five per second; its mutex serializes SEC cache misses. The ticker download
+is an additional request, which a browser holding a saved list skips by
+seeding that map instead (see [request concurrency](#request-concurrency)).
 
 ## Options and Greeks
 
@@ -181,6 +185,45 @@ Worker's origin and point every Yahoo/SEC base URL at it (see
 [patch notes](../vendor/README.md) for the matching `yfinance-rs` change);
 native builds and tests are unaffected and still call Yahoo/SEC directly.
 
+## Request concurrency
+
+Nothing in one Yahoo answer is needed to ask for another, so the browser sends
+them together rather than one at a time. Opening a first company is two round
+trips deep rather than seven — eight on a page that had to download the SEC
+ticker file again — because everything Yahoo can answer goes out at once, and
+only the SEC facts have to wait, for the gaps in those answers to be computed:
+
+- `Yahoo::financials` issues the three typed statements, the company profile
+  (only when the name is still missing) and the supplemental full-history
+  timeseries request in one `join`, then reads the results in the fixed
+  priority order above. Precedence between two sources reporting the same
+  metric is that reading order, never the order the answers come back in, so a
+  slow response cannot change which source wins.
+- Opening a company starts the daily closes at the same moment as the
+  statements (`warmPrices` in `web/src/lib/prices.ts`). The price panel mounts
+  only once the statements have been analyzed, so asking for prices from the
+  panel is what used to make the two serial; the panel now takes the download
+  already in flight, with its cached flag and any storage warning intact.
+  Refresh price still starts its own, and Refresh data still leaves prices
+  alone.
+- The SEC ticker file is saved for a day with each entry's CIK, so a page that
+  has it hands the ticker/CIK map back to the engine
+  (`BrowserProviders.primeTickers`) while the user is still choosing a company.
+  EDGAR then asks for company facts straight away instead of downloading that
+  file first, inside the statement request. Seeding it also loads the WASM
+  engine ahead of the first search rather than during it. A map already
+  downloaded in the tab is never replaced.
+
+What stays sequential is what genuinely depends on an earlier answer:
+`ProviderChain` asks each provider only for what the one before it left
+missing, which is what keeps an unneeded SEC or paid Alpha Vantage request
+from being made at all; EDGAR needs a CIK before it can ask for facts; and an
+option chain needs the expiration calendar before it can ask for one
+expiration. Alpha Vantage's statement endpoints stay one at a time as well:
+they spend the user's own metered quota, are called directly rather than
+through the Worker, and its free tier answers a burst with a rate-limit note
+rather than data.
+
 ## Cloudflare Worker proxy
 
 `worker/` proxies `GET /yahoo/chart/:symbol`, `/yahoo/quoteSummary/:symbol`,
@@ -194,7 +237,10 @@ wasm32 — the Worker discards and overwrites whatever crumb it receives anyway
 — so there is no auth-handshake round trip to reach Yahoo from the browser, and
 no credential ever crosses the browser/Worker boundary; every response keeps a
 plain `Access-Control-Allow-Origin: *` rather than a credentialed, echoed-origin
-response.
+response. That session is established once per isolate however many requests
+arrive together, and a stale one costs one handshake however many of them it
+rejects: a request told its session expired takes the replacement another has
+already established instead of logging in again.
 
 The Worker also holds a shared edge copy (Cloudflare Cache API) of every route
 whose data changes slowly: 15 minutes for daily closes, an hour for quote
@@ -219,8 +265,13 @@ values term by term, and the direction, volatility regime and payoff arithmetic
 of the recommendation. Browser tests use the real WASM provider chain
 and analysis engine with intercepted Cloudflare Worker proxy responses, and
 reject any request that reaches Yahoo or SEC directly (see `web/tests/upstream.ts`).
+Two of them hold one response until a later request has been sent — the typed
+statements until the full-history one is asked for, the statements until the
+price request is — so a return to loading those one after another fails the
+suite rather than quietly slowing the dashboard down.
 They do not consume any upstream API allowance. `worker/` has its own `npm test`
-(Vitest) covering routing, session caching and CORS, independent of the
+(Vitest) covering routing, session caching (including one handshake for a stale
+session however many parallel requests it fails) and CORS, independent of the
 browser tests.
 
 `cargo run -p financial-providers --example yahoo_smoke` is an opt-in live Yahoo

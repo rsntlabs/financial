@@ -2,7 +2,7 @@ use crate::{Needs, Provider, Request};
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use edgar_rs::{CompanyFacts, Fact};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap},
     time::Duration,
@@ -11,10 +11,15 @@ use tokio::sync::Mutex;
 use web_time::Instant;
 use yfinance_core::dataset::Dataset;
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct TickerEntry {
     pub ticker: String,
     pub name: String,
+    /// The issuer's SEC CIK, which company facts are requested by. Every entry
+    /// carries it so a page holding a saved list can hand the lookup map back
+    /// (see `prime_tickers`) instead of downloading the SEC ticker file again
+    /// before the first company can be opened.
+    pub cik: u64,
 }
 
 // Ordered aliases: prefer consolidated revenue and income over narrower concepts.
@@ -324,11 +329,32 @@ impl Edgar {
         Ok(cache
             .tickers
             .iter()
-            .map(|(ticker, (_, name))| TickerEntry {
+            .map(|(ticker, (cik, name))| TickerEntry {
                 ticker: ticker.clone(),
                 name: name.clone(),
+                cik: *cik,
             })
             .collect())
+    }
+
+    /// Loads the ticker -> CIK map from a list a caller saved earlier, so the
+    /// statements path can ask for company facts straight away rather than
+    /// waiting on the SEC ticker file first. A map already downloaded in this
+    /// process is left alone: it is at least as fresh as anything handed back
+    /// here, and may be mid-request behind the same lock.
+    pub async fn prime_tickers(&self, entries: Vec<TickerEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        let mut cache = self.cache.lock().await;
+        if !cache.tickers.is_empty() {
+            return;
+        }
+        cache.tickers = entries
+            .into_iter()
+            .map(|entry| (entry.ticker.replace('.', "-"), (entry.cik, entry.name)))
+            .collect();
+        cache.tickers_at = Instant::now();
     }
 }
 

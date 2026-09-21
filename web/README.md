@@ -31,20 +31,27 @@ Legacy Alpha statements and prices still open. Pending legacy Alpha endpoint
 downloads are not resumed by the browser provider chain.
 
 Saved data has no automatic expiry. A saved ticker is opened before any network
-request. Web Locks deduplicate first loads across tabs. The time span operates
-locally; use Refresh data with an ending year to acquire older history. Failed
-refreshes keep the prior saved snapshot. Partial financial coverage with usable
-revenue is saved with gap warnings. Add a key and refresh to try additional
-coverage. Browser storage failures are shown to the user.
+request. The ticker list saved for the search dropdown keeps each entry's SEC
+CIK and is handed back to the provider engine on page load, so a company's
+facts can be requested without downloading the SEC ticker file again first
+(see [request concurrency](../docs/providers.md#request-concurrency)); a list
+saved before those CIKs were kept is replaced. Web Locks deduplicate first
+loads across tabs. The time span operates locally; use Refresh data with an
+ending year to acquire older history. Failed refreshes keep the prior saved
+snapshot. Partial financial coverage with usable revenue is saved with gap
+warnings. Add a key and refresh to try additional coverage. Browser storage
+failures are shown to the user.
 
-Prices load independently after statements. They prefer full Yahoo history and
-fall back to Alpha only when needed. SEC supplies no daily prices. The chart
-shows the latest daily close, the daily change, and the dashboard's time span
-ending on the latest loaded session; it has no range control of its own. The
-maximum span preserves every available session. Price source is shown
-separately from financial sources; quote units are not assumed to match
-reporting currency. Legacy compact histories are upgraded through the provider
-chain, even without a key, and retained if upgrading fails.
+Prices load alongside the statements: opening a company starts both downloads
+at once, and the chart takes the one already in flight when it mounts, rather
+than asking for prices only after the statements have been analyzed. They
+prefer full Yahoo history and fall back to Alpha only when needed. SEC supplies
+no daily prices. The chart shows the latest daily close, the daily change, and
+the dashboard's time span ending on the latest loaded session; it has no range
+control of its own. The maximum span preserves every available session. Price
+source is shown separately from financial sources; quote units are not assumed
+to match reporting currency. Legacy compact histories are upgraded through the
+provider chain, even without a key, and retained if upgrading fails.
 
 Refresh price changes prices only. Clearing saved data removes financials and
 prices and atomically invalidates in-flight price cache writes across tabs.
