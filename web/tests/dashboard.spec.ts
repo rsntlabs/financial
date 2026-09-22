@@ -91,6 +91,26 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   await expect(
     page.getByRole("cell", { name: "33.3%", exact: true }).first(),
   ).toBeVisible();
+  // The balance sheet is common-sized against total assets, not revenue:
+  // cash of 40 against total assets of 300 is 13.3%, and equity of 200 is
+  // 66.7% — against revenue of 100 they would read 40% and 200%.
+  await page.getByRole("tab", { name: "Balance sheet", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "% of Total Assets", exact: true })
+    .click();
+  await expect(
+    page.getByText("Common size: each line as a percentage of total assets."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "13.3%", exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "66.7%", exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "100.0%", exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Income statement", exact: true }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   expect((await download).suggestedFilename()).toBe("TEST_financials.csv");

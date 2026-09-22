@@ -52,8 +52,11 @@ pub struct Point {
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
+#[serde(rename_all = "camelCase")]
 pub struct Section {
     pub name: String,
+    /// What the common-size view divides by, e.g. "revenue" or "total assets".
+    pub basis: String,
     pub rows: Vec<StatementRow>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -63,7 +66,7 @@ pub struct StatementRow {
     pub subtotal: bool,
     pub per_share: bool,
     pub values: Vec<Option<f64>>,
-    pub percent_revenue: Vec<Option<f64>>,
+    pub common_size: Vec<Option<f64>>,
     pub change_yoy: Vec<Option<f64>>,
 }
 
@@ -232,20 +235,24 @@ pub fn analyze(
     }
     let sections = statements::SECTIONS
         .iter()
-        .map(|(name, metrics)| Section {
-            name: (*name).into(),
-            rows: metrics
+        .map(|statement| Section {
+            name: statement.name.into(),
+            basis: statement.basis.into(),
+            rows: statement
+                .metrics
                 .iter()
                 .map(|(label, key, subtotal)| {
                     let values: Vec<_> = years.iter().map(|y| value(key, *y)).collect();
                     let per_share = label.ends_with("EPS");
-                    let percent_revenue = years
+                    // Common size: each line against its statement's own base —
+                    // total assets for the balance sheet, revenue elsewhere.
+                    let common_size = years
                         .iter()
                         .map(|y| {
                             if per_share {
                                 None
                             } else {
-                                ratio(value(key, *y), value("annualTotalRevenue", *y))
+                                ratio(value(key, *y), value(statement.base, *y))
                             }
                         })
                         .collect();
@@ -265,7 +272,7 @@ pub fn analyze(
                         subtotal: *subtotal,
                         per_share,
                         values,
-                        percent_revenue,
+                        common_size,
                         change_yoy,
                     }
                 })
@@ -369,6 +376,36 @@ mod tests {
         assert!(analyze("TEST", &data, 2, None).is_err());
         assert!(analyze("TEST", &data, 3, None).is_ok());
         assert!(analyze("TEST", &json!({}), 5, None).is_err());
+    }
+    #[test]
+    fn common_sizes_the_balance_sheet_against_total_assets() {
+        let mut data = payload();
+        data["balance"]["annualReports"] = json!((2021..=2025)
+            .map(|y| json!({
+                "fiscalDateEnding": format!("{y}-12-31"), "reportedCurrency": "USD",
+                "totalAssets": "300000000", "cashAndCashEquivalentsAtCarryingValue": "40000000",
+                "totalShareholderEquity": "200000000",
+            }))
+            .collect::<Vec<_>>());
+        let report = analyze("TEST", &data, 5, None).unwrap();
+        let income = &report.statements[0];
+        let balance = &report.statements[1];
+        assert_eq!(income.basis, "revenue");
+        assert_eq!(balance.basis, "total assets");
+        let line = |section: &Section, label: &str| {
+            section
+                .rows
+                .iter()
+                .find(|row| row.label == label)
+                .unwrap()
+                .common_size[4]
+        };
+        // Against total assets of 300, not revenue of 100: cash would
+        // otherwise read 40% and equity 200%.
+        assert_eq!(line(balance, "Cash & Cash Equivalents"), Some(40.0 / 300.0));
+        assert_eq!(line(balance, "Stockholders Equity"), Some(200.0 / 300.0));
+        assert_eq!(line(balance, "Total Assets"), Some(1.0));
+        assert_eq!(line(income, "Gross Profit"), Some(0.6));
     }
     #[test]
     fn accepts_only_reconciled_revenue_breakdowns() {
