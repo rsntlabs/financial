@@ -110,7 +110,9 @@ test("keyless WASM provider chain and analysis render annual figures, statement 
   await expect(
     page.getByRole("cell", { name: "100.0%", exact: true }).first(),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Income statement", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Income statement", exact: true })
+    .click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   expect((await download).suggestedFilename()).toBe("TEST_financials.csv");
@@ -187,6 +189,14 @@ test("cache survives reload and another tab, and period changes make no requests
   await page.reload();
   await search(page);
   await expect(page.getByText(/No API requests used/)).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cacheStatus = page.locator(".cache-status");
+  await expect(cacheStatus).toBeVisible();
+  expect(
+    await cacheStatus.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
   await chooseSpan(page, "10 years");
   expect([...calls].sort()).toEqual(["financials", "prices"]);
   const tab = await context.newPage();
