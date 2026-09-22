@@ -317,7 +317,7 @@ fn options_url(base: &str, ticker: &str, date: Option<i64>) -> Result<reqwest::U
 fn metric_keys() -> std::collections::BTreeSet<&'static str> {
     yfinance_core::statements::SECTIONS
         .iter()
-        .flat_map(|(_, rows)| rows.iter().map(|(_, key, _)| *key))
+        .flat_map(|statement| statement.metrics.iter().map(|(_, key, _)| *key))
         .collect()
 }
 

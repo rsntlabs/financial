@@ -43,11 +43,13 @@ export interface StatementRow {
   subtotal: boolean;
   perShare: boolean;
   values: Nullable[];
-  percentRevenue: Nullable[];
+  commonSize: Nullable[];
   changeYoy: Nullable[];
 }
 export interface Section {
   name: string;
+  /** What the common-size view divides by, e.g. "revenue" or "total assets". */
+  basis: string;
   rows: StatementRow[];
 }
 export interface CompositionSlice {

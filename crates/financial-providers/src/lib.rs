@@ -47,7 +47,7 @@ impl Needs {
             .unwrap_or(Utc::now().year() - 1);
         let metrics = SECTIONS
             .iter()
-            .flat_map(|(_, rows)| rows.iter())
+            .flat_map(|statement| statement.metrics.iter())
             .filter_map(|(_, key, _)| {
                 let missing = (end - request.years as i32 + 1..=end).any(|year| {
                     let date =
@@ -217,8 +217,8 @@ mod tests {
         data.currency = Some("USD".into());
         data.name = Some("Test".into());
         for y in 2021..=2025 {
-            for (_, rows) in SECTIONS {
-                for (_, key, _) in *rows {
+            for statement in SECTIONS {
+                for (_, key, _) in statement.metrics {
                     if complete || *key == "annualTotalRevenue" {
                         data.insert(key, &format!("{y}-12-31"), 100., source);
                     }

@@ -95,9 +95,38 @@ pub const CASH_FLOW: &[Metric] = &[
     ("Free Cash Flow", "annualFreeCashFlow", true),
 ];
 
-/// A statement section (name + its line items), in the order they should appear.
-pub const SECTIONS: &[(&str, &[Metric])] = &[
-    ("Income Statement", INCOME_STATEMENT),
-    ("Balance Sheet", BALANCE_SHEET),
-    ("Cash Flow Statement", CASH_FLOW),
+/// A statement section: its line items plus the denominator the common-size
+/// view divides them by.
+pub struct Statement {
+    pub name: &'static str,
+    pub metrics: &'static [Metric],
+    /// Metric ID every line is expressed against on the common-size view.
+    pub base: &'static str,
+    /// How that denominator reads in the UI, lower case.
+    pub basis: &'static str,
+}
+
+/// The statement sections, in the order they should appear. A common-size
+/// balance sheet is stated against total assets, not revenue: revenue is a
+/// flow over the year and the balance sheet is a stock at its end, so the
+/// ratio between them says nothing about the composition of the balance sheet.
+pub const SECTIONS: &[Statement] = &[
+    Statement {
+        name: "Income Statement",
+        metrics: INCOME_STATEMENT,
+        base: "annualTotalRevenue",
+        basis: "revenue",
+    },
+    Statement {
+        name: "Balance Sheet",
+        metrics: BALANCE_SHEET,
+        base: "annualTotalAssets",
+        basis: "total assets",
+    },
+    Statement {
+        name: "Cash Flow Statement",
+        metrics: CASH_FLOW,
+        base: "annualTotalRevenue",
+        basis: "revenue",
+    },
 ];

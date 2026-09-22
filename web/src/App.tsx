@@ -219,6 +219,11 @@ function TickerForm({
 }
 function Statement({ section, report }: { section: Section; report: Report }) {
   const [view, setView] = useState("values");
+  // Every statement is common-sized against its own base: the balance sheet
+  // against total assets, the others against revenue.
+  const basis = section.basis || "revenue";
+  const basisLabel = basis.replace(/\b\w/g, (c) => c.toUpperCase());
+  const perShare = section.rows.some((row) => row.perShare);
   return (
     <div className="statement-panel">
       <div className="statement-heading">
@@ -228,14 +233,14 @@ function Statement({ section, report }: { section: Section; report: Report }) {
             {view === "values"
               ? `Amounts in ${report.currency || "reporting currency"} millions, except per-share figures.`
               : view === "percent"
-                ? "Each metric as a percentage of revenue. EPS is excluded."
+                ? `Common size: each line as a percentage of ${basis}.${perShare ? " EPS is excluded." : ""}`
                 : "Change from the previous fiscal year, using its absolute value as the denominator."}
           </p>
         </div>
         <Tabs value={view} onValueChange={setView}>
           <TabsList aria-label="Statement display">
             <TabsTrigger value="values">Financials</TabsTrigger>
-            <TabsTrigger value="percent">% of Revenue</TabsTrigger>
+            <TabsTrigger value="percent">% of {basisLabel}</TabsTrigger>
             <TabsTrigger value="yoy">% Change YoY</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -262,7 +267,7 @@ function Statement({ section, report }: { section: Section; report: Report }) {
                 {(view === "values"
                   ? row.values
                   : view === "percent"
-                    ? row.percentRevenue
+                    ? row.commonSize
                     : row.changeYoy
                 ).map((v, i) => (
                   <TableCell
